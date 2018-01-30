@@ -39,7 +39,7 @@
 #include <grlib/grlib.h>
 #include "Crystalfontz128x128_ST7735.h"
 #include <driverlib/MSP430F5xx_6xx/driverlib.h>
-#include "HAL_MSP_EXP432P401R_Crystalfontz128x128_ST7735.h"
+#include <HAL_MSP_F5529_Crystalfontz128x128_ST7735.h>
 #include <stdint.h>
 
 uint8_t Lcd_Orientation;
@@ -611,16 +611,3 @@ Graphics_Display g_sCrystalfontz128x128 =
     Crystalfontz128x128_Flush,
     Crystalfontz128x128_ClearScreen
 };
-
-//const Graphics_Display_Functions g_sCrystalfontz128x128_funcs =
-//{
-//    Crystalfontz128x128_PixelDraw,
-//    Crystalfontz128x128_PixelDrawMultiple,
-//    Crystalfontz128x128_LineDrawH,
-//    Crystalfontz128x128_LineDrawV,
-//    Crystalfontz128x128_RectFill,
-//    Crystalfontz128x128_ColorTranslate,
-//    Crystalfontz128x128_Flush,
-//    Crystalfontz128x128_ClearScreen
-//
-//};

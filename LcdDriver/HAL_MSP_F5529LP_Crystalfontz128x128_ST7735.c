@@ -31,15 +31,15 @@
  * --/COPYRIGHT--*/
 //*****************************************************************************
 //
-// HAL_MSP_EXP432P401R_Crystalfontz128x128_ST7735.c -
+// HAL_MSP_F5529_Crystalfontz128x128_ST7735.c -
 //           Hardware abstraction layer for using the Educational Boosterpack's
-//           Crystalfontz128x128 LCD with MSP-EXP432P401R LaunchPad
+//           Crystalfontz128x128 LCD with MSP-F5529 LaunchPad
 //
 //*****************************************************************************
 
-#include "HAL_MSP_EXP432P401R_Crystalfontz128x128_ST7735.h"
 #include <grlib/grlib.h>
 #include <driverlib/MSP430F5xx_6xx/driverlib.h>
+#include <HAL_MSP_F5529_Crystalfontz128x128_ST7735.h>
 #include <stdint.h>
 
 void HAL_LCD_PortInit(void)
@@ -61,14 +61,14 @@ void HAL_LCD_SpiInit(void)
     USCI_B_SPI_initMasterParam config =
         {
             USCI_B_SPI_CLOCKSOURCE_SMCLK,
-            LCD_SYSTEM_CLOCK_SPEED,
-            LCD_SPI_CLOCK_SPEED,
+            UCS_getSMCLK(),
+            UCS_getSMCLK(),
             USCI_B_SPI_MSB_FIRST,
             USCI_B_SPI_PHASE_DATA_CAPTURED_ONFIRST_CHANGED_ON_NEXT,
             USCI_B_SPI_CLOCKPOLARITY_INACTIVITY_LOW
         };
-    USCI_B_SPI_initMaster(LCD_EUSCI_BASE, &config);
-    USCI_B_SPI_enable(LCD_EUSCI_BASE);
+    USCI_B_SPI_initMaster(LCD_USCI_BASE, &config);
+    USCI_B_SPI_enable(LCD_USCI_BASE);
 
     GPIO_setOutputLowOnPin(LCD_CS_PORT, LCD_CS_PIN);
 
@@ -89,14 +89,15 @@ void HAL_LCD_writeCommand(uint8_t command)
 
     // USCI_B0 Busy? //
     //while (UCB0STATW & UCBUSY);
-    while ( USCI_B_SPI_isBusy(LCD_EUSCI_BASE) );
+    while ( USCI_B_SPI_isBusy(LCD_USCI_BASE) );
 
     // Transmit data
-    UCB0TXBUF = command;
+    //UCB0TXBUF = command;
+    USCI_B_SPI_transmitData( LCD_USCI_BASE , command );
 
     // USCI_B0 Busy? //
     //while (UCB0STATW & UCBUSY);
-    while ( USCI_B_SPI_isBusy(LCD_EUSCI_BASE) );
+    while ( USCI_B_SPI_isBusy(LCD_USCI_BASE) );
 
     // Set back to data mode
     GPIO_setOutputHighOnPin(LCD_DC_PORT, LCD_DC_PIN);
@@ -113,12 +114,13 @@ void HAL_LCD_writeData(uint8_t data)
 {
     // USCI_B0 Busy? //
     //while (UCB0STATW & UCBUSY);
-    while ( USCI_B_SPI_isBusy(LCD_EUSCI_BASE) );
+    while ( USCI_B_SPI_isBusy(LCD_USCI_BASE) );
 
     // Transmit data
-    UCB0TXBUF = data;
+    //UCB0TXBUF = data;
+    USCI_B_SPI_transmitData( LCD_USCI_BASE , data );
 
     // USCI_B0 Busy? //
     //while (UCB0STATW & UCBUSY);
-    while ( USCI_B_SPI_isBusy(LCD_EUSCI_BASE) );
+    while ( USCI_B_SPI_isBusy(LCD_USCI_BASE) );
 }
