@@ -37,11 +37,23 @@ int main(void)
     GrContextFontSet(&g_sContext, &g_sFontFixed6x8);
     Graphics_clearDisplay(&g_sContext);
     Graphics_drawStringCentered(&g_sContext,
-                                    (int8_t *)"Joystick:",
-                                    AUTO_STRING_LENGTH,
-                                    64,
-                                    30,
-                                    OPAQUE_TEXT);
+                                (int8_t *)"Joystick:",
+                                AUTO_STRING_LENGTH,
+                                64,
+                                30,
+                                OPAQUE_TEXT);
+    Graphics_fillCircle(&g_sContext,
+                        50,
+                        100,
+                        25);
+
+    Graphics_Rectangle gr;
+    gr.xMax = 120;
+    gr.xMin = 100;
+    gr.yMax = 120;
+    gr.yMin = 100;
+
+    Graphics_fillRectangle(&g_sContext, &gr);
 
 	// Verify that the modified clock settings are as expected
     myACLK  = UCS_getACLK();
