@@ -4,7 +4,6 @@
 #include "Crystalfontz128x128_ST7735.h"
 #include <stdio.h>
 
-void testFunction(void);
 void initWatchdog(void);
 void initClocks(void);
 void initTimers(void);
@@ -28,10 +27,6 @@ int main(void)
 	initClocks();
 	initJoystickADC();
 	
-	mapValToRange(5, 0, 4095, 0, 127);
-
-	testFunction();
-
 	/* Initializes display */
 	Crystalfontz128x128_Init();
 
@@ -61,16 +56,10 @@ int main(void)
 
     while (1)
     {
-
-
+        Graphics_clearDisplay(&g_sContext);
     }
 
 	return 0;
-}
-
-void testFunction(void)
-{
-    int test = 0;
 }
 
 void initWatchdog(void)
@@ -112,6 +101,7 @@ void initJoystickADC(void)
     GPIO_setAsInputPin(GPIO_PORT_P6, GPIO_PIN3);
     GPIO_setAsInputPin(GPIO_PORT_P6, GPIO_PIN5);
 
+    /* TA0.1 is source ADC12_A_SAMPLEHOLDSOURCE_1*/
     ADC12_A_init(ADC12_A_BASE,
                  ADC12_A_SAMPLEHOLDSOURCE_SC,
                  ADC12_A_CLOCKSOURCE_SMCLK,
@@ -120,10 +110,11 @@ void initJoystickADC(void)
     ADC12_A_enable(ADC12_A_BASE);
 
     ADC12_A_setupSamplingTimer(ADC12_A_BASE,
-            ADC12_A_CYCLEHOLD_16_CYCLES,
-            ADC12_A_CYCLEHOLD_4_CYCLES,
+            ADC12_A_CYCLEHOLD_1024_CYCLES,
+            ADC12_A_CYCLEHOLD_1024_CYCLES,
             ADC12_A_MULTIPLESAMPLESENABLE);
 
+    /* Joystick X memory input */
     ADC12_A_configureMemoryParam param0 =
     {
      ADC12_A_MEMORY_0,
@@ -135,6 +126,7 @@ void initJoystickADC(void)
 
     ADC12_A_configureMemory(ADC12_A_BASE, &param0);
 
+    /* Joystick Y memory input */
     ADC12_A_configureMemoryParam param1 =
        {
         ADC12_A_MEMORY_1,
@@ -146,8 +138,8 @@ void initJoystickADC(void)
 
        ADC12_A_configureMemory(ADC12_A_BASE, &param1);
 
-    //Enable memory buffer 1 interrupts
-    // so interrupt fires when sequence is completed
+    // Enable memory buffer 1 interrupts
+    // so interrupt fires when sequence mem0 - mem1 or x - y is completed
     ADC12_A_clearInterrupt(ADC12_A_BASE,
         ADC12IFG1);
     ADC12_A_enableInterrupt(ADC12_A_BASE,
@@ -158,7 +150,7 @@ void initJoystickADC(void)
 // https://github.com/arduino/Arduino/issues/2466
 uint32_t mapValToRange(uint32_t x, uint32_t input_min, uint32_t input_max, uint32_t output_min, uint32_t output_max)
 {
-    uint32_t val = ((x - input_min)*(output_max - output_min + 1)/(input_max - input_min + 1)) + output_min;
+    uint32_t val = (uint32_t)(((x - input_min)*(output_max - output_min + 1)/(input_max - input_min + 1)) + output_min);
     return val;
 }
 
@@ -195,10 +187,10 @@ __interrupt void ADC12_ISR (void)
                                        70,
                                        OPAQUE_TEXT);
             Graphics_Rectangle rect;
-//            rect.xMax = mapValToRange(resultsBuffer[0] + 1, 0UL, 4095UL, 0UL, 127UL);
-//            rect.xMin = mapValToRange(resultsBuffer[0] - 1, 0UL, 4095UL, 0UL, 127UL);
-//            rect.yMax = mapValToRange(resultsBuffer[1] + 1, 0UL, 4095UL, 0UL, 127UL);
-//            rect.yMin = mapValToRange(resultsBuffer[1] - 1, 0UL, 4095UL, 0UL, 127UL);
+            rect.xMax = mapValToRange(resultsBuffer[0] + 1, 0UL, 4095UL, 0UL, 127UL);
+            rect.xMin = mapValToRange(resultsBuffer[0] - 1, 0UL, 4095UL, 0UL, 127UL);
+            rect.yMax = mapValToRange(resultsBuffer[1] + 1, 0UL, 4095UL, 127UL, 0UL);
+            rect.yMin = mapValToRange(resultsBuffer[1] - 1, 0UL, 4095UL, 127UL, 0UL);
             Graphics_fillRectangle(&g_sContext, &rect);
             break;   //Vector  8:  ADC12IFG1
         case 10: break;   //Vector 10:  ADC12IFG2
