@@ -25,6 +25,7 @@ int main(void)
 {
 	initWatchdog();
 	initClocks();
+	initTimers();
 	initJoystickADC();
 	
 	/* Initializes display */
@@ -39,24 +40,48 @@ int main(void)
     Graphics_setBackgroundColor(&g_sContext, GRAPHICS_COLOR_RED);
     GrContextFontSet(&g_sContext, &g_sFontFixed6x8);
     Graphics_clearDisplay(&g_sContext);
-    Graphics_drawStringCentered(&g_sContext,
-                                (int8_t *)"Joystick:",
-                                AUTO_STRING_LENGTH,
-                                64,
-                                30,
-                                OPAQUE_TEXT);
 
     // Globally enable interrupts
     __bis_SR_register(GIE);
 
-    //Enable/Start first sampling and conversion cycle
+    // Enable/Start first sampling and conversion cycle
     ADC12_A_startConversion(ADC12_A_BASE,
                 ADC12_A_MEMORY_0,
                 ADC12_A_REPEATED_SEQOFCHANNELS);
 
+    // Start the timer to trigger the Joystick ADC
+    Timer_A_startCounter(TIMER_A0_BASE, TIMER_A_UP_MODE);
+
     while (1)
     {
         Graphics_clearDisplay(&g_sContext);
+        Graphics_drawStringCentered(&g_sContext,
+                                   (int8_t *)"Joystick:",
+                                   AUTO_STRING_LENGTH,
+                                   64,
+                                   30,
+                                   OPAQUE_TEXT);
+        char string[10];
+        sprintf(string, "X: %5lu", resultsBuffer[0]);
+        Graphics_drawStringCentered(&g_sContext,
+                                       (int8_t *)string,
+                                       8,
+                                       64,
+                                       50,
+                                       OPAQUE_TEXT);
+        sprintf(string, "Y: %5lu", resultsBuffer[1]);
+        Graphics_drawStringCentered(&g_sContext,
+                                   (int8_t *)string,
+                                   8,
+                                   64,
+                                   70,
+                                   OPAQUE_TEXT);
+        Graphics_Rectangle rect;
+        rect.xMax = mapValToRange(resultsBuffer[0] + 1, 0UL, 255UL, 0UL, 127UL);
+        rect.xMin = mapValToRange(resultsBuffer[0] - 1, 0UL, 255UL, 0UL, 127UL);
+        rect.yMax = mapValToRange(resultsBuffer[1] + 1, 0UL, 255UL, 127UL, 0UL);
+        rect.yMin = mapValToRange(resultsBuffer[1] - 1, 0UL, 255UL, 127UL, 0UL);
+        Graphics_fillRectangle(&g_sContext, &rect);
     }
 
 	return 0;
@@ -83,7 +108,7 @@ void initClocks(void)
                         UCS_REFOCLK_SELECT,
                         UCS_CLOCK_DIVIDER_1);
 
-    // Set MCLK and SMCLK to use the DCO/FLL as their oscillator source (16MHz)
+    // Set MCLK and SMCLK to use the DCO/FLL as their oscillator source (24MHz)
     // The function does a number of things: Calculates required FLL settings; Configures FLL and DCO,
     // and then sets MCLK and SMCLK to use the DCO (with FLL runtime calibration)
     UCS_initFLLSettle(MCLK_SMCLK_DESIRED_FREQUENCY_IN_KHZ,
@@ -101,18 +126,22 @@ void initJoystickADC(void)
     GPIO_setAsInputPin(GPIO_PORT_P6, GPIO_PIN3);
     GPIO_setAsInputPin(GPIO_PORT_P6, GPIO_PIN5);
 
-    /* TA0.1 is source ADC12_A_SAMPLEHOLDSOURCE_1*/
+    /* TA0.1 is source ADC12_A_SAMPLEHOLDSOURCE_1 of this ADC */
     ADC12_A_init(ADC12_A_BASE,
-                 ADC12_A_SAMPLEHOLDSOURCE_SC,
+                 ADC12_A_SAMPLEHOLDSOURCE_1,
                  ADC12_A_CLOCKSOURCE_SMCLK,
                  ADC12_A_CLOCKDIVIDER_1);
 
     ADC12_A_enable(ADC12_A_BASE);
 
+    // Change the resolution to be between 0 - 127 to work with the
+    // pixels on the LCD
+    ADC12_A_setResolution(ADC12_A_BASE, ADC12_A_RESOLUTION_8BIT);
+
     ADC12_A_setupSamplingTimer(ADC12_A_BASE,
-            ADC12_A_CYCLEHOLD_1024_CYCLES,
-            ADC12_A_CYCLEHOLD_1024_CYCLES,
-            ADC12_A_MULTIPLESAMPLESENABLE);
+            ADC12_A_CYCLEHOLD_16_CYCLES,
+            ADC12_A_CYCLEHOLD_16_CYCLES,
+            ADC12_A_MULTIPLESAMPLESDISABLE);
 
     /* Joystick X memory input */
     ADC12_A_configureMemoryParam param0 =
@@ -157,6 +186,34 @@ uint32_t mapValToRange(uint32_t x, uint32_t input_min, uint32_t input_max, uint3
 void initTimers(void)
 {
 
+    Timer_A_initUpModeParam upModeParam=
+        {
+         TIMER_A_CLOCKSOURCE_ACLK, // 32 KHz clock => Period is .031 milliseconds
+         TIMER_A_CLOCKSOURCE_DIVIDER_1,
+         3200, // This needs to be the same value as the compare.  I think it has to do with the the set reset triggers.
+         TIMER_A_TAIE_INTERRUPT_DISABLE,
+         TIMER_A_CCIE_CCR0_INTERRUPT_DISABLE,
+         TIMER_A_DO_CLEAR,
+         false
+        };
+
+    Timer_A_initUpMode(TIMER_A0_BASE, &upModeParam);
+
+    Timer_A_initCompareModeParam compareParam =
+    {
+     TIMER_A_CAPTURECOMPARE_REGISTER_1,
+     TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
+     TIMER_A_OUTPUTMODE_SET_RESET,
+     3200, // Counted up to in 100 milliseconds (.1 second) with a 32 KHz clock
+    };
+
+    Timer_A_initCompareMode(TIMER_A0_BASE, &compareParam);
+
+    Timer_A_clearTimerInterrupt(TIMER_A0_BASE);
+
+    Timer_A_clearCaptureCompareInterrupt(TIMER_A0_BASE,
+                                         TIMER_A_CAPTURECOMPARE_REGISTER_0 +
+                                         TIMER_A_CAPTURECOMPARE_REGISTER_1);
 }
 
 #pragma vector=ADC12_VECTOR
@@ -170,28 +227,6 @@ __interrupt void ADC12_ISR (void)
         case  8:
             resultsBuffer[0] = (uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_0);
             resultsBuffer[1] = (uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_1);
-
-            char string[10];
-            sprintf(string, "X: %5lu", resultsBuffer[0]);
-            Graphics_drawStringCentered(&g_sContext,
-                                           (int8_t *)string,
-                                           8,
-                                           64,
-                                           50,
-                                           OPAQUE_TEXT);
-            sprintf(string, "Y: %5lu", resultsBuffer[1]);
-            Graphics_drawStringCentered(&g_sContext,
-                                       (int8_t *)string,
-                                       8,
-                                       64,
-                                       70,
-                                       OPAQUE_TEXT);
-            Graphics_Rectangle rect;
-            rect.xMax = mapValToRange(resultsBuffer[0] + 1, 0UL, 4095UL, 0UL, 127UL);
-            rect.xMin = mapValToRange(resultsBuffer[0] - 1, 0UL, 4095UL, 0UL, 127UL);
-            rect.yMax = mapValToRange(resultsBuffer[1] + 1, 0UL, 4095UL, 127UL, 0UL);
-            rect.yMin = mapValToRange(resultsBuffer[1] - 1, 0UL, 4095UL, 127UL, 0UL);
-            Graphics_fillRectangle(&g_sContext, &rect);
             break;   //Vector  8:  ADC12IFG1
         case 10: break;   //Vector 10:  ADC12IFG2
         case 12: break;   //Vector 12:  ADC12IFG3
