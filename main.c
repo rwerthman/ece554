@@ -18,6 +18,10 @@ Graphics_Context g_sContext;
 /* ADC results buffer */
 static uint32_t resultsBuffer[2];
 
+/* Fire button S2  value */
+uint8_t currentFireButtonState;
+uint8_t previousFireButtonState;
+
 /**
  * main.c
  */
@@ -55,32 +59,32 @@ int main(void)
     while (1)
     {
         Graphics_clearDisplay(&g_sContext);
-        Graphics_drawStringCentered(&g_sContext,
-                                   (int8_t *)"Joystick:",
-                                   AUTO_STRING_LENGTH,
-                                   64,
-                                   30,
-                                   OPAQUE_TEXT);
-        char string[10];
-        sprintf(string, "X: %5lu", resultsBuffer[0]);
-        Graphics_drawStringCentered(&g_sContext,
-                                       (int8_t *)string,
-                                       8,
-                                       64,
-                                       50,
-                                       OPAQUE_TEXT);
-        sprintf(string, "Y: %5lu", resultsBuffer[1]);
-        Graphics_drawStringCentered(&g_sContext,
-                                   (int8_t *)string,
-                                   8,
-                                   64,
-                                   70,
-                                   OPAQUE_TEXT);
+//        Graphics_drawStringCentered(&g_sContext,
+//                                   (int8_t *)"Joystick:",
+//                                   AUTO_STRING_LENGTH,
+//                                   64,
+//                                   30,
+//                                   OPAQUE_TEXT);
+//        char string[10];
+//        sprintf(string, "X: %5lu", resultsBuffer[0]);
+//        Graphics_drawStringCentered(&g_sContext,
+//                                       (int8_t *)string,
+//                                       8,
+//                                       64,
+//                                       50,
+//                                       OPAQUE_TEXT);
+//        sprintf(string, "Y: %5lu", resultsBuffer[1]);
+//        Graphics_drawStringCentered(&g_sContext,
+//                                   (int8_t *)string,
+//                                   8,
+//                                   64,
+//                                   70,
+//                                   OPAQUE_TEXT);
         Graphics_Rectangle rect;
-        rect.xMax = mapValToRange(resultsBuffer[0] + 1, 0UL, 255UL, 0UL, 127UL);
-        rect.xMin = mapValToRange(resultsBuffer[0] - 1, 0UL, 255UL, 0UL, 127UL);
-        rect.yMax = mapValToRange(resultsBuffer[1] + 1, 0UL, 255UL, 127UL, 0UL);
-        rect.yMin = mapValToRange(resultsBuffer[1] - 1, 0UL, 255UL, 127UL, 0UL);
+        rect.xMax = mapValToRange(resultsBuffer[0] + 2, 0UL, 255UL, 0UL, 127UL);
+        rect.xMin = mapValToRange(resultsBuffer[0] - 2, 0UL, 255UL, 0UL, 127UL);
+        rect.yMax = mapValToRange(resultsBuffer[1] + 2, 0UL, 255UL, 127UL, 0UL);
+        rect.yMin = mapValToRange(resultsBuffer[1] - 2, 0UL, 255UL, 127UL, 0UL);
         Graphics_fillRectangle(&g_sContext, &rect);
     }
 
@@ -91,6 +95,12 @@ void initWatchdog(void)
 {
     // Stop the watchdog timer
     WDT_A_hold( WDT_A_BASE );
+}
+
+void initGPIO(void)
+{
+    /* Enable user button 2 on educational booster pack */
+    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P3, GPIO_PIN7);
 }
 
 void initClocks(void)
@@ -186,6 +196,7 @@ uint32_t mapValToRange(uint32_t x, uint32_t input_min, uint32_t input_max, uint3
 void initTimers(void)
 {
 
+    /* Joystick ADC timer */
     Timer_A_initUpModeParam upModeParam=
         {
          TIMER_A_CLOCKSOURCE_ACLK, // 32 KHz clock => Period is .031 milliseconds
@@ -199,7 +210,7 @@ void initTimers(void)
 
     Timer_A_initUpMode(TIMER_A0_BASE, &upModeParam);
 
-    Timer_A_initCompareModeParam compareParam =
+    Timer_A_initCompareModeParam compareParam1 =
     {
      TIMER_A_CAPTURECOMPARE_REGISTER_1,
      TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
@@ -207,19 +218,30 @@ void initTimers(void)
      3200, // Counted up to in 100 milliseconds (.1 second) with a 32 KHz clock
     };
 
-    Timer_A_initCompareMode(TIMER_A0_BASE, &compareParam);
+    Timer_A_initCompareModeParam compareParam2 =
+    {
+     TIMER_A_CAPTURECOMPARE_REGISTER_2,
+     TIMER_A_CAPTURECOMPARE_INTERRUPT_ENABLE,
+     TIMER_A_OUTPUTMODE_OUTBITVALUE,
+     1600, // Counted up to in 50 milliseconds (.05 second) with a 32 KHz clock
+    };
+
+    Timer_A_initCompareMode(TIMER_A0_BASE, &compareParam1);
+    Timer_A_initCompareMode(TIMER_A0_BASE, &compareParam2);
 
     Timer_A_clearTimerInterrupt(TIMER_A0_BASE);
 
     Timer_A_clearCaptureCompareInterrupt(TIMER_A0_BASE,
                                          TIMER_A_CAPTURECOMPARE_REGISTER_0 +
-                                         TIMER_A_CAPTURECOMPARE_REGISTER_1);
+                                         TIMER_A_CAPTURECOMPARE_REGISTER_1 +
+                                         TIMER_A_CAPTURECOMPARE_REGISTER_2);
 }
 
 #pragma vector=ADC12_VECTOR
-__interrupt void ADC12_ISR (void)
+__interrupt void ADC12_ISR(void)
 {
-    switch (__even_in_range(ADC12IV,34)){
+    switch (__even_in_range(ADC12IV,34))
+    {
         case  0: break;   //Vector  0:  No interrupt
         case  2: break;   //Vector  2:  ADC overflow
         case  4: break;   //Vector  4:  ADC timing overflow
@@ -243,4 +265,35 @@ __interrupt void ADC12_ISR (void)
         case 34: break;   //Vector 34:  ADC12IFG14
         default: break;
     }
+}
+
+#pragma vector=TIMER0_A1_VECTOR
+__interrupt void TIMER0_A1_ISR(void)
+{
+  switch (__even_in_range(TA0IV, 12))
+  {
+      case 0: break; // None
+      case 2: break; // CCR1 IFG
+      case 4:
+          /* Read shoot button input */
+          currentFireButtonState = GPIO_getInputPinValue(GPIO_PORT_P3, GPIO_PIN7);
+          /* Debounce the button */
+          if (currentFireButtonState == previousFireButtonState && currentFireButtonState == GPIO_INPUT_PIN_LOW)
+          {
+              /* Shoot a bullet */
+              printf("fire bullet\n");
+              previousFireButtonState = GPIO_INPUT_PIN_HIGH;
+
+          }
+          else
+          {
+              previousFireButtonState = currentFireButtonState;
+          }
+          break; // CCR2
+      case 6: break; // CCR3
+      case 8: break; // CCR4
+      case 10: break; // CCR5
+      case 12: break; // Overflow
+      default: break;
+  }
 }
