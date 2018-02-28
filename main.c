@@ -8,29 +8,44 @@ void initWatchdog(void);
 void initClocks(void);
 void initTimers(void);
 void initJoystickADC(void);
+void initBullets(void);
 uint32_t mapValToRange(uint32_t x, uint32_t input_min, uint32_t input_max, uint32_t output_min, uint32_t output_max);
 
-#define MCLK_SMCLK_DESIRED_FREQUENCY_IN_KHZ 24000
+#define MCLK_SMCLK_DESIRED_FREQUENCY_IN_KHZ 25000
 
 /* Graphic library context */
 Graphics_Context g_sContext;
 
 /* ADC results buffer */
-static uint32_t resultsBuffer[2];
+static uint32_t spacecraftPosition[2];
 
 /* Fire button S2  value */
 uint8_t currentFireButtonState;
 uint8_t previousFireButtonState;
+
+/* Spacecraft bullets */
+enum
+{
+    x = 0,
+    y = 1
+};
+
+#define NUM_BULLETS (uint8_t)10
+uint16_t bullets[NUM_BULLETS][2];
+uint8_t currentBullet = 0;
 
 /**
  * main.c
  */
 int main(void)
 {
+    uint8_t i;
+
 	initWatchdog();
 	initClocks();
 	initTimers();
 	initJoystickADC();
+	initBullets();
 	
 	/* Initializes display */
 	Crystalfontz128x128_Init();
@@ -58,34 +73,46 @@ int main(void)
 
     while (1)
     {
-        Graphics_clearDisplay(&g_sContext);
-//        Graphics_drawStringCentered(&g_sContext,
-//                                   (int8_t *)"Joystick:",
-//                                   AUTO_STRING_LENGTH,
-//                                   64,
-//                                   30,
-//                                   OPAQUE_TEXT);
-//        char string[10];
-//        sprintf(string, "X: %5lu", resultsBuffer[0]);
-//        Graphics_drawStringCentered(&g_sContext,
-//                                       (int8_t *)string,
-//                                       8,
-//                                       64,
-//                                       50,
-//                                       OPAQUE_TEXT);
-//        sprintf(string, "Y: %5lu", resultsBuffer[1]);
-//        Graphics_drawStringCentered(&g_sContext,
-//                                   (int8_t *)string,
-//                                   8,
-//                                   64,
-//                                   70,
-//                                   OPAQUE_TEXT);
+        /* Clear the screen */
+        //Graphics_clearDisplay(&g_sContext);
+
+        /* Redraw the spacecraft */
         Graphics_Rectangle rect;
-        rect.xMax = mapValToRange(resultsBuffer[0] + 2, 0UL, 255UL, 0UL, 127UL);
-        rect.xMin = mapValToRange(resultsBuffer[0] - 2, 0UL, 255UL, 0UL, 127UL);
-        rect.yMax = mapValToRange(resultsBuffer[1] + 2, 0UL, 255UL, 127UL, 0UL);
-        rect.yMin = mapValToRange(resultsBuffer[1] - 2, 0UL, 255UL, 127UL, 0UL);
+        rect.xMax = spacecraftPosition[x] + 2;
+        rect.xMin = spacecraftPosition[x] - 2;
+        rect.yMax = spacecraftPosition[y] + 2;
+        rect.yMin = spacecraftPosition[y] - 2;
         Graphics_fillRectangle(&g_sContext, &rect);
+
+        /* Redraw the bullets */
+        for (i = 0; i < NUM_BULLETS; i++)
+        {
+            /* If the bullets have been shot so they aren't the
+             * initial values
+             */
+            if (bullets[i][x] != 200 && bullets[i][y] != 200)
+            {
+                rect.xMax = bullets[i][x] + 2;
+                rect.xMin = bullets[i][x] - 2;
+                rect.yMax = bullets[i][y] + 2;
+                rect.yMin = bullets[i][y] - 2;
+                Graphics_fillRectangle(&g_sContext, &rect);
+
+                /* If the bullets have moved off the screen reset
+                 * them
+                 */
+                if (bullets[i][y] == 0)
+                {
+                    bullets[i][x] = 200;
+                    bullets[i][y] = 200;
+                }
+                else
+                {
+                    /* Show the bullets moving up to the top of the screen */
+                    bullets[i][y]--;
+                }
+            }
+        }
     }
 
 	return 0;
@@ -97,6 +124,16 @@ void initWatchdog(void)
     WDT_A_hold( WDT_A_BASE );
 }
 
+void initBullets(void)
+{
+    uint8_t i;
+    for (i = 0; i < NUM_BULLETS; i++)
+    {
+        bullets[i][x] = 200;
+        bullets[i][y] = 200;
+    }
+}
+
 void initGPIO(void)
 {
     /* Enable user button 2 on educational booster pack */
@@ -105,8 +142,8 @@ void initGPIO(void)
 
 void initClocks(void)
 {
-    // Set the core voltage level to handle a 24 MHz clock rate
-    PMM_setVCore( PMM_CORE_LEVEL_3 );
+    // Set the core voltage level to handle a 25 MHz clock rate
+    PMM_setVCore(PMM_CORE_LEVEL_3);
 
     // Set ACLK to use REFO as its oscillator source (32KHz)
     UCS_initClockSignal(UCS_ACLK,
@@ -118,12 +155,11 @@ void initClocks(void)
                         UCS_REFOCLK_SELECT,
                         UCS_CLOCK_DIVIDER_1);
 
-    // Set MCLK and SMCLK to use the DCO/FLL as their oscillator source (24MHz)
+    // Set MCLK and SMCLK to use the DCO/FLL as their oscillator source (25MHz)
     // The function does a number of things: Calculates required FLL settings; Configures FLL and DCO,
     // and then sets MCLK and SMCLK to use the DCO (with FLL runtime calibration)
     UCS_initFLLSettle(MCLK_SMCLK_DESIRED_FREQUENCY_IN_KHZ,
                       (MCLK_SMCLK_DESIRED_FREQUENCY_IN_KHZ/(UCS_REFOCLK_FREQUENCY/1024)));
-
 }
 
 /**
@@ -247,8 +283,8 @@ __interrupt void ADC12_ISR(void)
         case  4: break;   //Vector  4:  ADC timing overflow
         case  6: break;        //Vector  6:  ADC12IFG0
         case  8:
-            resultsBuffer[0] = (uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_0);
-            resultsBuffer[1] = (uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_1);
+            spacecraftPosition[x] = mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_0), 0UL, 255UL, 0UL, 127UL);
+            spacecraftPosition[y] = mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_1), 0UL, 255UL, 127UL, 0UL);
             break;   //Vector  8:  ADC12IFG1
         case 10: break;   //Vector 10:  ADC12IFG2
         case 12: break;   //Vector 12:  ADC12IFG3
@@ -277,13 +313,25 @@ __interrupt void TIMER0_A1_ISR(void)
       case 4:
           /* Read shoot button input */
           currentFireButtonState = GPIO_getInputPinValue(GPIO_PORT_P3, GPIO_PIN7);
-          /* Debounce the button */
+          /* Debounce the button until next interrupt (50 milliseconds) */
           if (currentFireButtonState == previousFireButtonState && currentFireButtonState == GPIO_INPUT_PIN_LOW)
           {
               /* Shoot a bullet */
-              printf("fire bullet\n");
+              bullets[currentBullet][x] = spacecraftPosition[x];
+              bullets[currentBullet][y] = spacecraftPosition[y];
+              /* Go to the next bullet or back to 0 if there isn't
+               * another bullet
+               */
+              if (currentBullet < NUM_BULLETS)
+              {
+                  currentBullet++;
+              }
+              else
+              {
+                  currentBullet = 0;
+              }
+              /* Reset previous state to ready for next button press */
               previousFireButtonState = GPIO_INPUT_PIN_HIGH;
-
           }
           else
           {
