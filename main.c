@@ -8,7 +8,7 @@ void initWatchdog(void);
 void initClocks(void);
 void initTimers(void);
 void initJoystickADC(void);
-void initBullets(void);
+void initObjects(void);
 uint32_t mapValToRange(uint32_t x, uint32_t input_min, uint32_t input_max, uint32_t output_min, uint32_t output_max);
 
 #define MCLK_SMCLK_DESIRED_FREQUENCY_IN_KHZ 25000
@@ -18,6 +18,7 @@ Graphics_Context g_sContext;
 
 /* ADC results buffer */
 static uint32_t spacecraftPosition[2];
+static uint32_t previousSpacecraftPosition[2];
 
 /* Fire button S2  value */
 uint8_t currentFireButtonState;
@@ -45,7 +46,7 @@ int main(void)
 	initClocks();
 	initTimers();
 	initJoystickADC();
-	initBullets();
+	initObjects();
 	
 	/* Initializes display */
 	Crystalfontz128x128_Init();
@@ -78,6 +79,12 @@ int main(void)
 
         /* Redraw the spacecraft */
         Graphics_Rectangle rect;
+        rect.xMax = previousSpacecraftPosition[x] + 2;
+        rect.xMin = previousSpacecraftPosition[x] - 2;
+        rect.yMax = previousSpacecraftPosition[y] + 2;
+        rect.yMin = previousSpacecraftPosition[y] - 2;
+        Graphics_fillRectangleOnDisplay(g_sContext.display, &rect, g_sContext.background);
+
         rect.xMax = spacecraftPosition[x] + 2;
         rect.xMin = spacecraftPosition[x] - 2;
         rect.yMax = spacecraftPosition[y] + 2;
@@ -124,7 +131,7 @@ void initWatchdog(void)
     WDT_A_hold( WDT_A_BASE );
 }
 
-void initBullets(void)
+void initObjects(void)
 {
     uint8_t i;
     for (i = 0; i < NUM_BULLETS; i++)
@@ -132,6 +139,12 @@ void initBullets(void)
         bullets[i][x] = 200;
         bullets[i][y] = 200;
     }
+
+    spacecraftPosition[x] = 0;
+    spacecraftPosition[y] = 0;
+
+    previousSpacecraftPosition[x] =  spacecraftPosition[x];
+    previousSpacecraftPosition[y] =  spacecraftPosition[y];
 }
 
 void initGPIO(void)
@@ -283,8 +296,11 @@ __interrupt void ADC12_ISR(void)
         case  4: break;   //Vector  4:  ADC timing overflow
         case  6: break;        //Vector  6:  ADC12IFG0
         case  8:
+            previousSpacecraftPosition[x] =  spacecraftPosition[x];
+            previousSpacecraftPosition[y] =  spacecraftPosition[y];
             spacecraftPosition[x] = mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_0), 0UL, 255UL, 0UL, 127UL);
-            spacecraftPosition[y] = mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_1), 0UL, 255UL, 127UL, 0UL);
+            /* Invert the y values so when the joystick goes up y goes down */
+            spacecraftPosition[y] = 0x7F & ~mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_1), 0UL, 255UL, 0UL, 127UL);
             break;   //Vector  8:  ADC12IFG1
         case 10: break;   //Vector 10:  ADC12IFG2
         case 12: break;   //Vector 12:  ADC12IFG3
