@@ -20,6 +20,11 @@ Graphics_Context g_sContext;
 static uint32_t spacecraftPosition[2];
 static uint32_t previousSpacecraftPosition[2];
 
+Graphics_Rectangle spacecraftClearRect;
+Graphics_Rectangle rect;
+
+Graphics_Rectangle bulletsRect;
+
 /* Fire button S2  value */
 uint8_t currentFireButtonState;
 uint8_t previousFireButtonState;
@@ -33,6 +38,7 @@ enum
 
 #define NUM_BULLETS (uint8_t)10
 uint16_t bullets[NUM_BULLETS][2];
+uint16_t previousBullets[NUM_BULLETS][2];
 uint8_t currentBullet = 0;
 
 /**
@@ -40,7 +46,7 @@ uint8_t currentBullet = 0;
  */
 int main(void)
 {
-    uint8_t i;
+    //uint8_t i;
 
 	initWatchdog();
 	initClocks();
@@ -72,54 +78,70 @@ int main(void)
     // Start the timer to trigger the Joystick ADC
     Timer_A_startCounter(TIMER_A0_BASE, TIMER_A_UP_MODE);
 
+    //Graphics_Rectangle rect;
+
     while (1)
     {
         /* Clear the screen */
         //Graphics_clearDisplay(&g_sContext);
 
         /* Redraw the spacecraft */
-        Graphics_Rectangle rect;
-        rect.xMax = previousSpacecraftPosition[x] + 2;
-        rect.xMin = previousSpacecraftPosition[x] - 2;
-        rect.yMax = previousSpacecraftPosition[y] + 2;
-        rect.yMin = previousSpacecraftPosition[y] - 2;
-        Graphics_fillRectangleOnDisplay(g_sContext.display, &rect, g_sContext.background);
+        //Graphics_Rectangle rect;
+//        if (previousSpacecraftPosition[x] != spacecraftPosition[x] && previousSpacecraftPosition[y] != spacecraftPosition[y])
+//        {
+//            rect.xMax = previousSpacecraftPosition[x] + 2;
+//            rect.xMin = previousSpacecraftPosition[x] - 2;
+//            rect.yMax = previousSpacecraftPosition[y] + 2;
+//            rect.yMin = previousSpacecraftPosition[y] - 2;
+//            Graphics_fillRectangleOnDisplay(g_sContext.display, &rect, g_sContext.background);
+//        }
 
-        rect.xMax = spacecraftPosition[x] + 2;
-        rect.xMin = spacecraftPosition[x] - 2;
-        rect.yMax = spacecraftPosition[y] + 2;
-        rect.yMin = spacecraftPosition[y] - 2;
-        Graphics_fillRectangle(&g_sContext, &rect);
+       /* If the spacecraft is in a new position clear its old position and redraw it */
+//      if (previousSpacecraftPosition[x] != spacecraftPosition[x] || previousSpacecraftPosition[y] != spacecraftPosition[y])
+//      {
+//        /* Clear the spacecrafts previous position */
+//        spacecraftClearRect.xMax = previousSpacecraftPosition[x] + 2;
+//        spacecraftClearRect.xMin = previousSpacecraftPosition[x] - 2;
+//        spacecraftClearRect.yMax = previousSpacecraftPosition[y] + 2;
+//        spacecraftClearRect.yMin = previousSpacecraftPosition[y] - 2;
+//        Graphics_fillRectangleOnDisplay(g_sContext.display, &spacecraftClearRect, g_sContext.background);
+//        /* Draw it's new position */
+//        rect.xMax = spacecraftPosition[x] + 2;
+//        rect.xMin = spacecraftPosition[x] - 2;
+//        rect.yMax = spacecraftPosition[y] + 2;
+//        rect.yMin = spacecraftPosition[y] - 2;
+//        Graphics_fillRectangle(&g_sContext, &rect);
+//      }
 
         /* Redraw the bullets */
-        for (i = 0; i < NUM_BULLETS; i++)
-        {
-            /* If the bullets have been shot so they aren't the
-             * initial values
-             */
-            if (bullets[i][x] != 200 && bullets[i][y] != 200)
-            {
-                rect.xMax = bullets[i][x] + 2;
-                rect.xMin = bullets[i][x] - 2;
-                rect.yMax = bullets[i][y] + 2;
-                rect.yMin = bullets[i][y] - 2;
-                Graphics_fillRectangle(&g_sContext, &rect);
-
-                /* If the bullets have moved off the screen reset
-                 * them
-                 */
-                if (bullets[i][y] == 0)
-                {
-                    bullets[i][x] = 200;
-                    bullets[i][y] = 200;
-                }
-                else
-                {
-                    /* Show the bullets moving up to the top of the screen */
-                    bullets[i][y]--;
-                }
-            }
-        }
+//        for (i = 0; i < NUM_BULLETS; i++)
+//        {
+//            /* If the bullets have been shot so they aren't the
+//             * initial values
+//             */
+//            if (bullets[i][x] != 200 && bullets[i][y] != 200)
+//            {
+//                rect.xMax = bullets[i][x] + 2;
+//                rect.xMin = bullets[i][x] - 2;
+//                rect.yMax = bullets[i][y] + 2;
+//                rect.yMin = bullets[i][y] - 2;
+//                Graphics_fillRectangle(&g_sContext, &rect);
+//
+//                /* If the bullets have moved off the screen reset
+//                 * them
+//                 */
+//                if (bullets[i][y] == 0)
+//                {
+//                    bullets[i][x] = 200;
+//                    bullets[i][y] = 200;
+//                }
+//                else
+//                {
+//                    /* Show the bullets moving up to the top of the screen */
+//                    bullets[i][y]--;
+//                }
+//            }
+//        }
     }
 
 	return 0;
@@ -138,6 +160,8 @@ void initObjects(void)
     {
         bullets[i][x] = 200;
         bullets[i][y] = 200;
+        previousBullets[i][x] = bullets[i][x];
+        previousBullets[i][y] = bullets[i][y];
     }
 
     spacecraftPosition[x] = 0;
@@ -296,11 +320,29 @@ __interrupt void ADC12_ISR(void)
         case  4: break;   //Vector  4:  ADC timing overflow
         case  6: break;        //Vector  6:  ADC12IFG0
         case  8:
+            /* Store the spacecrafts previous position */
             previousSpacecraftPosition[x] =  spacecraftPosition[x];
             previousSpacecraftPosition[y] =  spacecraftPosition[y];
+            /* Store the spacecrafts new position */
             spacecraftPosition[x] = mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_0), 0UL, 255UL, 0UL, 127UL);
             /* Invert the y values so when the joystick goes up y goes down */
             spacecraftPosition[y] = 0x7F & ~mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_1), 0UL, 255UL, 0UL, 127UL);
+            /* If the spacecraft is in a new position clear its old position and redraw it */
+              if (previousSpacecraftPosition[x] != spacecraftPosition[x] || previousSpacecraftPosition[y] != spacecraftPosition[y])
+              {
+                /* Clear the spacecrafts previous position */
+                spacecraftClearRect.xMax = previousSpacecraftPosition[x] + 2;
+                spacecraftClearRect.xMin = previousSpacecraftPosition[x] - 2;
+                spacecraftClearRect.yMax = previousSpacecraftPosition[y] + 2;
+                spacecraftClearRect.yMin = previousSpacecraftPosition[y] - 2;
+                Graphics_fillRectangleOnDisplay(g_sContext.display, &spacecraftClearRect, g_sContext.background);
+                /* Draw it's new position */
+                rect.xMax = spacecraftPosition[x] + 2;
+                rect.xMin = spacecraftPosition[x] - 2;
+                rect.yMax = spacecraftPosition[y] + 2;
+                rect.yMin = spacecraftPosition[y] - 2;
+                Graphics_fillRectangle(&g_sContext, &rect);
+              }
             break;   //Vector  8:  ADC12IFG1
         case 10: break;   //Vector 10:  ADC12IFG2
         case 12: break;   //Vector 12:  ADC12IFG3
@@ -327,15 +369,23 @@ __interrupt void TIMER0_A1_ISR(void)
       case 0: break; // None
       case 2: break; // CCR1 IFG
       case 4:
-          /* Read shoot button input */
+          /* Read the "shoot" button input */
           currentFireButtonState = GPIO_getInputPinValue(GPIO_PORT_P3, GPIO_PIN7);
-          /* Debounce the button until next interrupt (50 milliseconds) */
+          /* Debounce the button until next interrupt (50 milliseconds)
+           * so wait another 50 milliseconds to see if the button is still low
+           */
           if (currentFireButtonState == previousFireButtonState && currentFireButtonState == GPIO_INPUT_PIN_LOW)
           {
-              /* Shoot a bullet */
+              /* If the button is low shoot a bullet */
+              /* First store the bullets starting position */
+              previousBullets[currentBullet][x] = bullets[currentBullet][x];
+              previousBullets[currentBullet][y] = bullets[currentBullet][y];
+              /* Set the bullet to the position of the spacecraft when
+               * it was fired.
+               */
               bullets[currentBullet][x] = spacecraftPosition[x];
               bullets[currentBullet][y] = spacecraftPosition[y];
-              /* Go to the next bullet or back to 0 if there isn't
+              /* Advance to the next bullet or back to 0 if there isn't
                * another bullet
                */
               if (currentBullet < NUM_BULLETS)
@@ -346,12 +396,54 @@ __interrupt void TIMER0_A1_ISR(void)
               {
                   currentBullet = 0;
               }
-              /* Reset previous state to ready for next button press */
+              /* Reset previous button state to be ready for the next button press */
               previousFireButtonState = GPIO_INPUT_PIN_HIGH;
           }
           else
           {
               previousFireButtonState = currentFireButtonState;
+          }
+          /* Advance the other bullets by clearing their previous positions
+           * and drawing them at their new positions
+           */
+          uint8_t i;
+          for (i = 0; i < NUM_BULLETS; i++)
+          {
+              /* If the bullets have been shot which means they aren't the
+               * initial values they were set to
+               */
+              if (bullets[i][x] != 200 && bullets[i][y] != 200)
+              {
+                  /* Clear the bullets previous position */
+                  bulletsRect.xMax = previousBullets[i][x] + 2;
+                  bulletsRect.xMin = previousBullets[i][x] - 2;
+                  bulletsRect.yMax = previousBullets[i][y] + 2;
+                  bulletsRect.yMin = previousBullets[i][y] - 2;
+                    Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect, g_sContext.background);
+
+                    /* Draw the bullet at its new position */
+                    bulletsRect.xMax = bullets[i][x] + 2;
+                    bulletsRect.xMin = bullets[i][x] - 2;
+                    bulletsRect.yMax = bullets[i][y] + 2;
+                    bulletsRect.yMin = bullets[i][y] - 2;
+                  Graphics_fillRectangle(&g_sContext, &bulletsRect);
+
+                  /* If the bullet has moved off the screen reset
+                   * it.
+                   */
+                  if (bullets[i][y] == 0)
+                  {
+                      bullets[i][x] = 200;
+                      bullets[i][y] = 200;
+                  }
+                  else
+                  {
+                      /* Store the bullets y position before moving to the next one */
+                      previousBullets[i][y] = bullets[i][y];
+                      /* Show the bullets moving up to the top of the screen */
+                      bullets[i][y]--;
+                  }
+              }
           }
           break; // CCR2
       case 6: break; // CCR3
