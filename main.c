@@ -77,71 +77,14 @@ int main(void)
 
     // Start the timer to trigger the Joystick ADC
     Timer_A_startCounter(TIMER_A0_BASE, TIMER_A_UP_MODE);
+    // Start the timer to trigger the Aliens
+    Timer_A_startCounter(TIMER_A1_BASE, TIMER_A_UP_MODE);
 
     //Graphics_Rectangle rect;
 
     while (1)
     {
-        /* Clear the screen */
-        //Graphics_clearDisplay(&g_sContext);
 
-        /* Redraw the spacecraft */
-        //Graphics_Rectangle rect;
-//        if (previousSpacecraftPosition[x] != spacecraftPosition[x] && previousSpacecraftPosition[y] != spacecraftPosition[y])
-//        {
-//            rect.xMax = previousSpacecraftPosition[x] + 2;
-//            rect.xMin = previousSpacecraftPosition[x] - 2;
-//            rect.yMax = previousSpacecraftPosition[y] + 2;
-//            rect.yMin = previousSpacecraftPosition[y] - 2;
-//            Graphics_fillRectangleOnDisplay(g_sContext.display, &rect, g_sContext.background);
-//        }
-
-       /* If the spacecraft is in a new position clear its old position and redraw it */
-//      if (previousSpacecraftPosition[x] != spacecraftPosition[x] || previousSpacecraftPosition[y] != spacecraftPosition[y])
-//      {
-//        /* Clear the spacecrafts previous position */
-//        spacecraftClearRect.xMax = previousSpacecraftPosition[x] + 2;
-//        spacecraftClearRect.xMin = previousSpacecraftPosition[x] - 2;
-//        spacecraftClearRect.yMax = previousSpacecraftPosition[y] + 2;
-//        spacecraftClearRect.yMin = previousSpacecraftPosition[y] - 2;
-//        Graphics_fillRectangleOnDisplay(g_sContext.display, &spacecraftClearRect, g_sContext.background);
-//        /* Draw it's new position */
-//        rect.xMax = spacecraftPosition[x] + 2;
-//        rect.xMin = spacecraftPosition[x] - 2;
-//        rect.yMax = spacecraftPosition[y] + 2;
-//        rect.yMin = spacecraftPosition[y] - 2;
-//        Graphics_fillRectangle(&g_sContext, &rect);
-//      }
-
-        /* Redraw the bullets */
-//        for (i = 0; i < NUM_BULLETS; i++)
-//        {
-//            /* If the bullets have been shot so they aren't the
-//             * initial values
-//             */
-//            if (bullets[i][x] != 200 && bullets[i][y] != 200)
-//            {
-//                rect.xMax = bullets[i][x] + 2;
-//                rect.xMin = bullets[i][x] - 2;
-//                rect.yMax = bullets[i][y] + 2;
-//                rect.yMin = bullets[i][y] - 2;
-//                Graphics_fillRectangle(&g_sContext, &rect);
-//
-//                /* If the bullets have moved off the screen reset
-//                 * them
-//                 */
-//                if (bullets[i][y] == 0)
-//                {
-//                    bullets[i][x] = 200;
-//                    bullets[i][y] = 200;
-//                }
-//                else
-//                {
-//                    /* Show the bullets moving up to the top of the screen */
-//                    bullets[i][y]--;
-//                }
-//            }
-//        }
     }
 
 	return 0;
@@ -308,18 +251,43 @@ void initTimers(void)
                                          TIMER_A_CAPTURECOMPARE_REGISTER_0 +
                                          TIMER_A_CAPTURECOMPARE_REGISTER_1 +
                                          TIMER_A_CAPTURECOMPARE_REGISTER_2);
+
+    /* Alien timer */
+    Timer_A_initUpModeParam upModeParamA1=
+    {
+     TIMER_A_CLOCKSOURCE_ACLK, // 32 KHz clock => Period is .031 milliseconds
+     TIMER_A_CLOCKSOURCE_DIVIDER_1,
+     6400,
+     TIMER_A_TAIE_INTERRUPT_DISABLE,
+     TIMER_A_CCIE_CCR0_INTERRUPT_DISABLE,
+     TIMER_A_DO_CLEAR,
+     false
+    };
+
+    Timer_A_initUpMode(TIMER_A1_BASE, &upModeParamA1);
+
+    Timer_A_initCompareModeParam compareParam1A1 =
+       {
+        TIMER_A_CAPTURECOMPARE_REGISTER_1,
+        TIMER_A_CAPTURECOMPARE_INTERRUPT_ENABLE,
+        TIMER_A_OUTPUTMODE_SET_RESET,
+        6400, // Counted up to in 200 milliseconds (.2 second) with a 32 KHz clock
+       };
+
+    Timer_A_initCompareMode(TIMER_A1_BASE, &compareParam1A1);
+    Timer_A_clearTimerInterrupt(TIMER_A1_BASE);
+    Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE,
+                                        TIMER_A_CAPTURECOMPARE_REGISTER_0 +
+                                        TIMER_A_CAPTURECOMPARE_REGISTER_1);
+
 }
 
 #pragma vector=ADC12_VECTOR
 __interrupt void ADC12_ISR(void)
 {
-    switch (__even_in_range(ADC12IV,34))
+    switch (__even_in_range(ADC12IV, 8))
     {
-        case  0: break;   //Vector  0:  No interrupt
-        case  2: break;   //Vector  2:  ADC overflow
-        case  4: break;   //Vector  4:  ADC timing overflow
-        case  6: break;        //Vector  6:  ADC12IFG0
-        case  8:
+        case  8: //Vector  8:  ADC12IFG1
             /* Store the spacecrafts previous position */
             previousSpacecraftPosition[x] =  spacecraftPosition[x];
             previousSpacecraftPosition[y] =  spacecraftPosition[y];
@@ -343,20 +311,7 @@ __interrupt void ADC12_ISR(void)
                 rect.yMin = spacecraftPosition[y] - 2;
                 Graphics_fillRectangle(&g_sContext, &rect);
               }
-            break;   //Vector  8:  ADC12IFG1
-        case 10: break;   //Vector 10:  ADC12IFG2
-        case 12: break;   //Vector 12:  ADC12IFG3
-        case 14: break;   //Vector 14:  ADC12IFG4
-        case 16: break;   //Vector 16:  ADC12IFG5
-        case 18: break;   //Vector 18:  ADC12IFG6
-        case 20: break;   //Vector 20:  ADC12IFG7
-        case 22: break;   //Vector 22:  ADC12IFG8
-        case 24: break;   //Vector 24:  ADC12IFG9
-        case 26: break;   //Vector 26:  ADC12IFG10
-        case 28: break;   //Vector 28:  ADC12IFG11
-        case 30: break;   //Vector 30:  ADC12IFG12
-        case 32: break;   //Vector 32:  ADC12IFG13
-        case 34: break;   //Vector 34:  ADC12IFG14
+            break;
         default: break;
     }
 }
@@ -364,11 +319,9 @@ __interrupt void ADC12_ISR(void)
 #pragma vector=TIMER0_A1_VECTOR
 __interrupt void TIMER0_A1_ISR(void)
 {
-  switch (__even_in_range(TA0IV, 12))
+  switch (__even_in_range(TA0IV, 4))
   {
-      case 0: break; // None
-      case 2: break; // CCR1 IFG
-      case 4:
+      case 4: // CCR2 IFG
           /* Read the "shoot" button input */
           currentFireButtonState = GPIO_getInputPinValue(GPIO_PORT_P3, GPIO_PIN7);
           /* Debounce the button until next interrupt (50 milliseconds)
@@ -384,7 +337,11 @@ __interrupt void TIMER0_A1_ISR(void)
                * it was fired.
                */
               bullets[currentBullet][x] = spacecraftPosition[x];
-              bullets[currentBullet][y] = spacecraftPosition[y];
+              /* Subtract from the spacecraft position so the bullet looks like it is ahead of the
+               * spacecraft when we shoot it and also we don't
+               * clear the spacecraft when we clear the bullet
+               */
+              bullets[currentBullet][y] = spacecraftPosition[y] - 5;
               /* Advance to the next bullet or back to 0 if there isn't
                * another bullet
                */
@@ -410,46 +367,54 @@ __interrupt void TIMER0_A1_ISR(void)
           for (i = 0; i < NUM_BULLETS; i++)
           {
               /* If the bullets have been shot which means they aren't the
-               * initial values they were set to
+               * initial values they were set to draw them on the screen
                */
               if (bullets[i][x] != 200 && bullets[i][y] != 200)
               {
                   /* Clear the bullets previous position */
-                  bulletsRect.xMax = previousBullets[i][x] + 2;
-                  bulletsRect.xMin = previousBullets[i][x] - 2;
-                  bulletsRect.yMax = previousBullets[i][y] + 2;
-                  bulletsRect.yMin = previousBullets[i][y] - 2;
-                    Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect, g_sContext.background);
-
-                    /* Draw the bullet at its new position */
-                    bulletsRect.xMax = bullets[i][x] + 2;
-                    bulletsRect.xMin = bullets[i][x] - 2;
-                    bulletsRect.yMax = bullets[i][y] + 2;
-                    bulletsRect.yMin = bullets[i][y] - 2;
-                  Graphics_fillRectangle(&g_sContext, &bulletsRect);
-
+                   bulletsRect.xMax = previousBullets[i][x] + 2;
+                   bulletsRect.xMin = previousBullets[i][x] - 2;
+                   bulletsRect.yMax = previousBullets[i][y] + 2;
+                   bulletsRect.yMin = previousBullets[i][y] - 2;
+                   Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect, g_sContext.background);
                   /* If the bullet has moved off the screen reset
-                   * it.
-                   */
-                  if (bullets[i][y] == 0)
-                  {
-                      bullets[i][x] = 200;
-                      bullets[i][y] = 200;
-                  }
-                  else
-                  {
-                      /* Store the bullets y position before moving to the next one */
-                      previousBullets[i][y] = bullets[i][y];
-                      /* Show the bullets moving up to the top of the screen */
-                      bullets[i][y]--;
-                  }
+                     * it.
+                     */
+                    if (bullets[i][y] <= 0)
+                    {
+                        bullets[i][x] = 200;
+                        bullets[i][y] = 200;
+
+                    }
+                    else
+                    {
+                        /* Store the bullets position before moving to the next one */
+                        previousBullets[i][x] = bullets[i][x];
+                        previousBullets[i][y] = bullets[i][y];
+                        /* Show the bullets moving up to the top of the screen */
+                        bullets[i][y]--;
+
+                        /* Draw the bullet at its new position */
+                        bulletsRect.xMax = bullets[i][x] + 2;
+                        bulletsRect.xMin = bullets[i][x] - 2;
+                        bulletsRect.yMax = bullets[i][y] + 2;
+                        bulletsRect.yMin = bullets[i][y] - 2;
+                        Graphics_fillRectangle(&g_sContext, &bulletsRect);
+                    }
               }
           }
-          break; // CCR2
-      case 6: break; // CCR3
-      case 8: break; // CCR4
-      case 10: break; // CCR5
-      case 12: break; // Overflow
+          break;
       default: break;
   }
+}
+
+#pragma vector=TIMER1_A1_VECTOR
+__interrupt void TIMER1_A1_ISR(void)
+{
+    switch (__even_in_range(TA1IV, 4))
+      {
+        case 2: // CCR1 IFG
+            /* Draw the aliens */
+            break;
+      }
 }
