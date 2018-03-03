@@ -974,6 +974,8 @@ extern int32_t  Graphics_isOverlappingRectangle(Graphics_Rectangle *psRect1,
 		Graphics_Rectangle *psRect2);
 extern int32_t  Graphics_getRectangleIntersection(Graphics_Rectangle *psRect1,
 		Graphics_Rectangle *psRect2, Graphics_Rectangle *psIntersect);
+extern int32_t Graphics_isRectangleOverlap(Graphics_Rectangle *rect1,
+        Graphics_Rectangle *rect2);
 extern void Graphics_setBackgroundColor(Graphics_Context *context,
 		int32_t value);
 extern uint16_t Graphics_getDisplayWidth(Graphics_Context *context);

@@ -20,22 +20,28 @@ Graphics_Context g_sContext;
 static uint32_t spacecraftPosition[2];
 static uint32_t previousSpacecraftPosition[2];
 
-Graphics_Rectangle spacecraftClearRect;
-Graphics_Rectangle rect;
+Graphics_Rectangle spacecraftRect;
 
 Graphics_Rectangle bulletsRect;
+
+Graphics_Rectangle alienRect;
 
 /* Fire button S2  value */
 uint8_t currentFireButtonState;
 uint8_t previousFireButtonState;
 
-/* Spacecraft bullets */
 enum
 {
     x = 0,
     y = 1
 };
 
+/* Aliens */
+#define NUM_ALIENS (uint8_t)3
+uint16_t aliens[NUM_ALIENS][2];
+uint16_t previousAliens[NUM_ALIENS][2];
+
+/* Spacecraft bullets */
 #define NUM_BULLETS (uint8_t)10
 uint16_t bullets[NUM_BULLETS][2];
 uint16_t previousBullets[NUM_BULLETS][2];
@@ -105,6 +111,14 @@ void initObjects(void)
         bullets[i][y] = 200;
         previousBullets[i][x] = bullets[i][x];
         previousBullets[i][y] = bullets[i][y];
+    }
+
+    for (i = 0; i < NUM_ALIENS; i++)
+    {
+        aliens[i][x] = 2+10*i;
+        aliens[i][y] = 2+10*i;
+        previousAliens[i][x] = aliens[i][x];
+        previousAliens[i][y] = aliens[i][y];
     }
 
     spacecraftPosition[x] = 0;
@@ -299,17 +313,17 @@ __interrupt void ADC12_ISR(void)
               if (previousSpacecraftPosition[x] != spacecraftPosition[x] || previousSpacecraftPosition[y] != spacecraftPosition[y])
               {
                 /* Clear the spacecrafts previous position */
-                spacecraftClearRect.xMax = previousSpacecraftPosition[x] + 2;
-                spacecraftClearRect.xMin = previousSpacecraftPosition[x] - 2;
-                spacecraftClearRect.yMax = previousSpacecraftPosition[y] + 2;
-                spacecraftClearRect.yMin = previousSpacecraftPosition[y] - 2;
-                Graphics_fillRectangleOnDisplay(g_sContext.display, &spacecraftClearRect, g_sContext.background);
+                  spacecraftRect.xMax = previousSpacecraftPosition[x] + 2;
+                  spacecraftRect.xMin = previousSpacecraftPosition[x] - 2;
+                  spacecraftRect.yMax = previousSpacecraftPosition[y] + 2;
+                  spacecraftRect.yMin = previousSpacecraftPosition[y] - 2;
+                Graphics_fillRectangleOnDisplay(g_sContext.display, &spacecraftRect, g_sContext.background);
                 /* Draw it's new position */
-                rect.xMax = spacecraftPosition[x] + 2;
-                rect.xMin = spacecraftPosition[x] - 2;
-                rect.yMax = spacecraftPosition[y] + 2;
-                rect.yMin = spacecraftPosition[y] - 2;
-                Graphics_fillRectangle(&g_sContext, &rect);
+                spacecraftRect.xMax = spacecraftPosition[x] + 2;
+                spacecraftRect.xMin = spacecraftPosition[x] - 2;
+                spacecraftRect.yMax = spacecraftPosition[y] + 2;
+                spacecraftRect.yMin = spacecraftPosition[y] - 2;
+                Graphics_fillRectangle(&g_sContext, &spacecraftRect);
               }
             break;
         default: break;
@@ -394,12 +408,52 @@ __interrupt void TIMER0_A1_ISR(void)
                         /* Show the bullets moving up to the top of the screen */
                         bullets[i][y]--;
 
-                        /* Draw the bullet at its new position */
                         bulletsRect.xMax = bullets[i][x] + 2;
                         bulletsRect.xMin = bullets[i][x] - 2;
                         bulletsRect.yMax = bullets[i][y] + 2;
                         bulletsRect.yMin = bullets[i][y] - 2;
                         Graphics_fillRectangle(&g_sContext, &bulletsRect);
+                        /* Check if any of the aliens have been hit
+                         * by the bullet
+                         */
+                        uint8_t j;
+                        for (j = 0; j < NUM_ALIENS; j++)
+                        {
+                            alienRect.xMax = aliens[j][x] + 2;
+                            alienRect.xMin = aliens[j][x] - 2;
+                            alienRect.yMax = aliens[j][y] + 2;
+                            alienRect.yMin = aliens[j][y] - 2;
+
+                            /* If a bullet and alien intersect... */
+                            if (Graphics_isRectangleOverlap(&bulletsRect, &alienRect))
+                            {
+                                /* Clear the aliens previous position */
+                              alienRect.xMax = aliens[j][x] + 2;
+                              alienRect.xMin = aliens[j][x] - 2;
+                              alienRect.yMax = aliens[j][y] + 2;
+                              alienRect.yMin = aliens[j][y] - 2;
+                              Graphics_fillRectangleOnDisplay(g_sContext.display, &alienRect, g_sContext.background);
+                                /* Kill the alien */
+                                aliens[j][x] = 200;
+                                aliens[j][y] = 200;
+
+                                /* Clear the bullet */
+                                /* Clear the bullets position */
+                              bulletsRect.xMax = bullets[i][x] + 2;
+                              bulletsRect.xMin = bullets[i][x] - 2;
+                              bulletsRect.yMax = bullets[i][y] + 2;
+                              bulletsRect.yMin = bullets[i][y] - 2;
+                              Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect, g_sContext.background);
+
+                              /* Set the bullet to its starting values
+                               * so it is not redrawn again
+                               */
+                                bullets[i][x] = 200;
+                                bullets[i][y] = 200;
+                                previousBullets[i][x] = bullets[i][x];
+                                previousBullets[i][y] = bullets[i][y];
+                            }
+                        }
                     }
               }
           }
@@ -414,7 +468,81 @@ __interrupt void TIMER1_A1_ISR(void)
     switch (__even_in_range(TA1IV, 4))
       {
         case 2: // CCR1 IFG
+        {
             /* Draw the aliens */
+            uint8_t i;
+            for (i = 0; i < NUM_ALIENS; i++)
+            {
+                /* If the aliens aren't dead... */
+                if (aliens[i][x] != 200 && aliens[i][y] != 200)
+                {
+                    /* Clear the aliens previous position */
+                    alienRect.xMax = previousAliens[i][x] + 2;
+                    alienRect.xMin = previousAliens[i][x] - 2;
+                    alienRect.yMax = previousAliens[i][y] + 2;
+                    alienRect.yMin = previousAliens[i][y] - 2;
+                   Graphics_fillRectangleOnDisplay(g_sContext.display, &alienRect, g_sContext.background);
+
+                   /* Keep the aliens on the screen */
+                   /* Alien is moving to the right almost off the screen */
+                   if (aliens[i][x] > 125 && previousAliens[i][x] < aliens[i][x])
+                   {
+                       previousAliens[i][x] = aliens[i][x];
+                       aliens[i][x]--;
+                   }
+                   /* Alien is moving to the left almost off the screen */
+                   else if (aliens[i][x] < 2 && previousAliens[i][x] > aliens[i][x])
+                   {
+                       previousAliens[i][x] = aliens[i][x];
+                       aliens[i][x]++;
+                   }
+                   /* Alien is just moving to the right */
+                   else if (aliens[i][x] > previousAliens[i][x])
+                   {
+                       /* Keep alien moving to the right */
+                       previousAliens[i][x] = aliens[i][x];
+                       aliens[i][x]++;
+                   }
+                   /* Alien is just moving to the left */
+                   else if (aliens[i][x] < previousAliens[i][x])
+                   {
+                       /* Keep alien moving to the left */
+                      previousAliens[i][x] = aliens[i][x];
+                      aliens[i][x]--;
+                   }
+                   /* Alien hasn't started moving */
+                   else if (aliens[i][x] == previousAliens[i][x])
+                   {
+                       /* Choose a direction based on i */
+                       if (i % 2)
+                       {
+                           previousAliens[i][x] = aliens[i][x];
+                           aliens[i][x]++;
+                       }
+                       else
+                       {
+                           previousAliens[i][x] = aliens[i][x];
+                           aliens[i][x]--;
+                       }
+                   }
+                   else
+                   {
+                       printf("[Alien] Movement should not be reached");
+                   }
+                   /* Draw the alien at its new position */
+                   alienRect.xMax = aliens[i][x] + 2;
+                   alienRect.xMin = aliens[i][x] - 2;
+                   alienRect.yMax = aliens[i][y] + 2;
+                   alienRect.yMin = aliens[i][y] - 2;
+                  Graphics_fillRectangle(&g_sContext, &alienRect);
+                }
+                else
+                {
+                    /* Don't draw the alien because it is dead */
+                }
+            }
             break;
+        }
+        default: break;
       }
 }
