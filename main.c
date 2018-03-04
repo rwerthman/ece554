@@ -7,6 +7,7 @@
 void initWatchdog(void);
 void initClocks(void);
 void initTimers(void);
+void initGPIO(void);
 void initJoystickADC(void);
 void initObjects(void);
 uint32_t mapValToRange(uint32_t x, uint32_t input_min, uint32_t input_max, uint32_t output_min, uint32_t output_max);
@@ -26,6 +27,8 @@ Graphics_Rectangle bulletsRect;
 
 Graphics_Rectangle alienRect;
 
+Graphics_Rectangle explosionRect;
+
 /* Fire button S2  value */
 uint8_t currentFireButtonState;
 uint8_t previousFireButtonState;
@@ -33,13 +36,18 @@ uint8_t previousFireButtonState;
 enum
 {
     x = 0,
-    y = 1
+    y = 1,
+    s = 2, // Enable or not
+    r = 3, // Radius
+    d = 4  // Direction
 };
 
 /* Aliens */
 #define NUM_ALIENS (uint8_t)3
 uint16_t aliens[NUM_ALIENS][2];
 uint16_t previousAliens[NUM_ALIENS][2];
+
+uint16_t explosions[NUM_ALIENS][5];
 
 /* Spacecraft bullets */
 #define NUM_BULLETS (uint8_t)10
@@ -50,13 +58,14 @@ uint8_t currentBullet = 0;
 /**
  * main.c
  */
-int main(void)
+void main(void)
 {
     //uint8_t i;
 
 	initWatchdog();
 	initClocks();
 	initTimers();
+	initGPIO();
 	initJoystickADC();
 	initObjects();
 	
@@ -86,14 +95,13 @@ int main(void)
     // Start the timer to trigger the Aliens
     Timer_A_startCounter(TIMER_A1_BASE, TIMER_A_UP_MODE);
 
-    //Graphics_Rectangle rect;
 
+    Timer_A_startCounter(TIMER_A2_BASE, TIMER_A_UP_MODE);
     while (1)
     {
-
+        //GPIO_setOutputHighOnPin(GPIO_PORT_P2, GPIO_PIN5);
+        //GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN5);
     }
-
-	return 0;
 }
 
 void initWatchdog(void)
@@ -119,6 +127,10 @@ void initObjects(void)
         aliens[i][y] = 2+10*i;
         previousAliens[i][x] = aliens[i][x];
         previousAliens[i][y] = aliens[i][y];
+
+        /* Disable the explosions */
+        explosions[i][s] = 0;
+
     }
 
     spacecraftPosition[x] = 0;
@@ -130,8 +142,16 @@ void initObjects(void)
 
 void initGPIO(void)
 {
+    /* Configures Pin 6.3 (Joystick Y) and 6.5 (Joystick X) as ADC input */
+   GPIO_setAsInputPin(GPIO_PORT_P6, GPIO_PIN3);
+   GPIO_setAsInputPin(GPIO_PORT_P6, GPIO_PIN5);
+
     /* Enable user button 2 on educational booster pack */
     GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P3, GPIO_PIN7);
+
+    /* Enable buzzer on educational booster pack */
+    GPIO_setAsOutputPin(GPIO_PORT_P2, GPIO_PIN5);
+
 }
 
 void initClocks(void)
@@ -161,10 +181,6 @@ void initClocks(void)
  */
 void initJoystickADC(void)
 {
-
-    /* Configures Pin 6.3 (Joystick Y) and 6.5 (Joystick X) as ADC input */
-    GPIO_setAsInputPin(GPIO_PORT_P6, GPIO_PIN3);
-    GPIO_setAsInputPin(GPIO_PORT_P6, GPIO_PIN5);
 
     /* TA0.1 is source ADC12_A_SAMPLEHOLDSOURCE_1 of this ADC */
     ADC12_A_init(ADC12_A_BASE,
@@ -294,6 +310,41 @@ void initTimers(void)
                                         TIMER_A_CAPTURECOMPARE_REGISTER_0 +
                                         TIMER_A_CAPTURECOMPARE_REGISTER_1);
 
+    /* Generate PWM for the buzzer */
+//    Timer_A_outputPWMParam pwmBuzzerParam1 =
+//    {
+//     TIMER_A_CLOCKSOURCE_ACLK,
+//     TIMER_A_CLOCKSOURCE_DIVIDER_1,
+//     3200,
+//     TIMER_A_CAPTURECOMPARE_REGISTER_2,
+//     TIMER_A_OUTPUTMODE_SET_RESET,
+//     1600
+//    };
+//    Timer_A_outputPWM(TIMER_A2_BASE, &pwmBuzzerParam1);
+
+    Timer_A_initUpModeParam upModeParamA2=
+        {
+         TIMER_A_CLOCKSOURCE_ACLK, // 32 KHz clock => Period is .031 milliseconds
+         TIMER_A_CLOCKSOURCE_DIVIDER_1,
+         6400,
+         TIMER_A_TAIE_INTERRUPT_DISABLE,
+         TIMER_A_CCIE_CCR0_INTERRUPT_DISABLE,
+         TIMER_A_DO_CLEAR,
+         false
+        };
+
+        Timer_A_initUpMode(TIMER_A2_BASE, &upModeParamA2);
+
+        Timer_A_initCompareModeParam compareParamA2 =
+           {
+            TIMER_A_CAPTURECOMPARE_REGISTER_2,
+            TIMER_A_CAPTURECOMPARE_INTERRUPT_ENABLE,
+            TIMER_A_OUTPUTMODE_SET_RESET,
+            6400, // 50% duty cycle
+           };
+
+        Timer_A_initCompareMode(TIMER_A2_BASE, &compareParamA2);
+
 }
 
 #pragma vector=ADC12_VECTOR
@@ -374,6 +425,7 @@ __interrupt void TIMER0_A1_ISR(void)
           {
               previousFireButtonState = currentFireButtonState;
           }
+
           /* Advance the other bullets by clearing their previous positions
            * and drawing them at their new positions
            */
@@ -427,7 +479,13 @@ __interrupt void TIMER0_A1_ISR(void)
                             /* If a bullet and alien intersect... */
                             if (Graphics_isRectangleOverlap(&bulletsRect, &alienRect))
                             {
-                                /* Clear the aliens previous position */
+                              /* Draw an explosion at the alien and bullet  */
+                                explosions[j][x] = aliens[j][x];
+                                explosions[j][y] = aliens[j][y];
+                                explosions[j][r] = 5;
+                                explosions[j][s] = 1;
+                                explosions[j][d] = 1;
+                              /* Clear the aliens previous position */
                               alienRect.xMax = aliens[j][x] + 2;
                               alienRect.xMin = aliens[j][x] - 2;
                               alienRect.yMax = aliens[j][y] + 2;
@@ -541,8 +599,66 @@ __interrupt void TIMER1_A1_ISR(void)
                     /* Don't draw the alien because it is dead */
                 }
             }
+            /* Advance the explosions */
+              for (i = 0; i < NUM_ALIENS; i++)
+              {
+                  /* If the explosion has been set to be shown */
+                  if (explosions[i][s])
+                  {
+                      /* If the explosion is set to increase in direction */
+                      if (explosions[i][d] == 1)
+                      {
+                          /* Don't need to clear previous circle because the explosion gets bigger */
+                          Graphics_fillCircle(&g_sContext, explosions[i][x], explosions[i][y], explosions[i][r]);
+                          explosions[i][r] += 5;
+                          /* Max explosion radius should be 10 but we have to go to 15 to draw a circle with radius 10 */
+                          if (explosions[i][r] >= 15)
+                          {
+                              explosions[i][d] = 0;
+                              explosions[i][r] = 10;
+                          }
+                      }
+                      else
+                      {
+                          /* Clear previous explosion circle because circle gets smaller */
+                          explosionRect.xMax = explosions[i][x] + explosions[i][r];
+                            explosionRect.xMin = explosions[i][x] - explosions[i][r];
+                            explosionRect.yMax = explosions[i][y] + explosions[i][r];
+                            explosionRect.yMin = explosions[i][y] - explosions[i][r];
+                            Graphics_fillRectangleOnDisplay(g_sContext.display, &explosionRect, g_sContext.background);
+                            /* Decrease the explosion size */
+                            explosions[i][r] -= 5;
+                            /* Minimum explosion size is 0.  Stop the explosion
+                               * when it gets to that size
+                               */
+                          if (explosions[i][r] <= 0)
+                          {
+                              /* Don't draw circle with radius 0 */
+                              explosions[i][s] = 0;
+                          }
+                          else
+                          {
+                              /* Otherwise keep drawing smaller explosions */
+                              Graphics_fillCircle(&g_sContext, explosions[i][x], explosions[i][y], explosions[i][r]);
+                          }
+                      }
+                  }
+              }
             break;
         }
         default: break;
       }
+}
+
+#pragma vector=TIMER2_A1_VECTOR
+__interrupt void TIMER2_A1_ISR(void)
+{
+  switch (__even_in_range(TA0IV, 4))
+  {
+      case 4: // CCR2 IFG
+          //GPIO_toggleOutputOnPin(GPIO_PORT_P2, GPIO_PIN5);
+          break;
+      default:
+          break;
+  }
 }
