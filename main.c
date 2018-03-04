@@ -7,11 +7,15 @@
 void initWatchdog(void);
 void initClocks(void);
 void initTimers(void);
+void initGPIO(void);
 void initJoystickADC(void);
 void initObjects(void);
 uint32_t mapValToRange(uint32_t x, uint32_t input_min, uint32_t input_max, uint32_t output_min, uint32_t output_max);
 
 #define MCLK_SMCLK_DESIRED_FREQUENCY_IN_KHZ 25000
+
+uint8_t pwmFireCounter = 4;
+uint8_t pwmExplosionCounter = 4;
 
 /* Graphic library context */
 Graphics_Context g_sContext;
@@ -26,6 +30,8 @@ Graphics_Rectangle bulletsRect;
 
 Graphics_Rectangle alienRect;
 
+Graphics_Rectangle explosionRect;
+
 /* Fire button S2  value */
 uint8_t currentFireButtonState;
 uint8_t previousFireButtonState;
@@ -33,13 +39,18 @@ uint8_t previousFireButtonState;
 enum
 {
     x = 0,
-    y = 1
+    y = 1,
+    s = 2, // Enable or not
+    r = 3, // Radius
+    d = 4  // Direction
 };
 
 /* Aliens */
 #define NUM_ALIENS (uint8_t)3
 uint16_t aliens[NUM_ALIENS][2];
 uint16_t previousAliens[NUM_ALIENS][2];
+
+uint16_t explosions[NUM_ALIENS][5];
 
 /* Spacecraft bullets */
 #define NUM_BULLETS (uint8_t)10
@@ -50,13 +61,14 @@ uint8_t currentBullet = 0;
 /**
  * main.c
  */
-int main(void)
+void main(void)
 {
     //uint8_t i;
 
 	initWatchdog();
 	initClocks();
 	initTimers();
+	initGPIO();
 	initJoystickADC();
 	initObjects();
 	
@@ -86,14 +98,10 @@ int main(void)
     // Start the timer to trigger the Aliens
     Timer_A_startCounter(TIMER_A1_BASE, TIMER_A_UP_MODE);
 
-    //Graphics_Rectangle rect;
-
     while (1)
     {
 
     }
-
-	return 0;
 }
 
 void initWatchdog(void)
@@ -119,6 +127,10 @@ void initObjects(void)
         aliens[i][y] = 2+10*i;
         previousAliens[i][x] = aliens[i][x];
         previousAliens[i][y] = aliens[i][y];
+
+        /* Disable the explosions */
+        explosions[i][s] = 0;
+
     }
 
     spacecraftPosition[x] = 0;
@@ -130,8 +142,16 @@ void initObjects(void)
 
 void initGPIO(void)
 {
+    /* Configures Pin 6.3 (Joystick Y) and 6.5 (Joystick X) as ADC input */
+   GPIO_setAsInputPin(GPIO_PORT_P6, GPIO_PIN3);
+   GPIO_setAsInputPin(GPIO_PORT_P6, GPIO_PIN5);
+
     /* Enable user button 2 on educational booster pack */
     GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P3, GPIO_PIN7);
+
+    /* Enable buzzer on educational booster pack with timer output going to this pin*/
+    GPIO_setAsPeripheralModuleFunctionOutputPin(GPIO_PORT_P2, GPIO_PIN5);
+
 }
 
 void initClocks(void)
@@ -161,10 +181,6 @@ void initClocks(void)
  */
 void initJoystickADC(void)
 {
-
-    /* Configures Pin 6.3 (Joystick Y) and 6.5 (Joystick X) as ADC input */
-    GPIO_setAsInputPin(GPIO_PORT_P6, GPIO_PIN3);
-    GPIO_setAsInputPin(GPIO_PORT_P6, GPIO_PIN5);
 
     /* TA0.1 is source ADC12_A_SAMPLEHOLDSOURCE_1 of this ADC */
     ADC12_A_init(ADC12_A_BASE,
@@ -293,7 +309,6 @@ void initTimers(void)
     Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE,
                                         TIMER_A_CAPTURECOMPARE_REGISTER_0 +
                                         TIMER_A_CAPTURECOMPARE_REGISTER_1);
-
 }
 
 #pragma vector=ADC12_VECTOR
@@ -369,11 +384,48 @@ __interrupt void TIMER0_A1_ISR(void)
               }
               /* Reset previous button state to be ready for the next button press */
               previousFireButtonState = GPIO_INPUT_PIN_HIGH;
+
+              /* Generate PWM for the buzzer */
+                 Timer_A_outputPWMParam pwmBuzzerParam1 =
+                 {
+                  TIMER_A_CLOCKSOURCE_ACLK,
+                  TIMER_A_CLOCKSOURCE_DIVIDER_1,
+                  3200,
+                  TIMER_A_CAPTURECOMPARE_REGISTER_2,
+                  TIMER_A_OUTPUTMODE_RESET_SET,
+                  3000
+                 };
+                 Timer_A_outputPWM(TIMER_A2_BASE, &pwmBuzzerParam1);
+                 pwmFireCounter = 0;
           }
           else
           {
               previousFireButtonState = currentFireButtonState;
+              /* Let the pwm signal to the buzzer run for 3 interrupts */
+              if (pwmFireCounter < 3)
+              {
+                  pwmFireCounter += 1;
+              }
+              else if (pwmFireCounter == 3)
+              {
+                  Timer_A_stop(TIMER_A2_BASE);
+                  pwmFireCounter = 4;
+              }
+
+              /* If we aren't shooting and we can make the explosion noise */
+              if (pwmExplosionCounter < 3 && pwmFireCounter == 4)
+              {
+                  pwmExplosionCounter += 1;
+              }
+              /* If we aren't shooting we can turn off the timer and we are done with the explosion noises */
+              else if (pwmFireCounter == 4 && pwmExplosionCounter == 3)
+              {
+                  Timer_A_stop(TIMER_A2_BASE);
+                  pwmExplosionCounter = 4;
+              }
+
           }
+
           /* Advance the other bullets by clearing their previous positions
            * and drawing them at their new positions
            */
@@ -427,7 +479,25 @@ __interrupt void TIMER0_A1_ISR(void)
                             /* If a bullet and alien intersect... */
                             if (Graphics_isRectangleOverlap(&bulletsRect, &alienRect))
                             {
-                                /* Clear the aliens previous position */
+                              /* Draw an explosion at the alien and bullet  */
+                                explosions[j][x] = aliens[j][x];
+                                explosions[j][y] = aliens[j][y];
+                                explosions[j][r] = 5;
+                                explosions[j][s] = 1;
+                                explosions[j][d] = 1;
+                                /* Generate PWM for the buzzer to make a sound of an explosion */
+                                 Timer_A_outputPWMParam pwmBuzzerParam1 =
+                                 {
+                                  TIMER_A_CLOCKSOURCE_ACLK,
+                                  TIMER_A_CLOCKSOURCE_DIVIDER_1,
+                                  3200,
+                                  TIMER_A_CAPTURECOMPARE_REGISTER_2,
+                                  TIMER_A_OUTPUTMODE_RESET_SET,
+                                  3000
+                                 };
+                                 Timer_A_outputPWM(TIMER_A2_BASE, &pwmBuzzerParam1);
+                                 pwmExplosionCounter = 0;
+                              /* Clear the aliens previous position */
                               alienRect.xMax = aliens[j][x] + 2;
                               alienRect.xMin = aliens[j][x] - 2;
                               alienRect.yMax = aliens[j][y] + 2;
@@ -541,6 +611,51 @@ __interrupt void TIMER1_A1_ISR(void)
                     /* Don't draw the alien because it is dead */
                 }
             }
+            /* Advance the explosions */
+              for (i = 0; i < NUM_ALIENS; i++)
+              {
+                  /* If the explosion has been set to be shown */
+                  if (explosions[i][s])
+                  {
+                      /* If the explosion is set to increase in direction */
+                      if (explosions[i][d] == 1)
+                      {
+                          /* Don't need to clear previous circle because the explosion gets bigger */
+                          Graphics_fillCircle(&g_sContext, explosions[i][x], explosions[i][y], explosions[i][r]);
+                          explosions[i][r] += 5;
+                          /* Max explosion radius should be 10 but we have to go to 15 to draw a circle with radius 10 */
+                          if (explosions[i][r] >= 15)
+                          {
+                              explosions[i][d] = 0;
+                              explosions[i][r] = 10;
+                          }
+                      }
+                      else
+                      {
+                          /* Clear previous explosion circle because circle gets smaller */
+                          explosionRect.xMax = explosions[i][x] + explosions[i][r];
+                            explosionRect.xMin = explosions[i][x] - explosions[i][r];
+                            explosionRect.yMax = explosions[i][y] + explosions[i][r];
+                            explosionRect.yMin = explosions[i][y] - explosions[i][r];
+                            Graphics_fillRectangleOnDisplay(g_sContext.display, &explosionRect, g_sContext.background);
+                            /* Decrease the explosion size */
+                            explosions[i][r] -= 5;
+                            /* Minimum explosion size is 0.  Stop the explosion
+                               * when it gets to that size
+                               */
+                          if (explosions[i][r] <= 0)
+                          {
+                              /* Don't draw circle with radius 0 */
+                              explosions[i][s] = 0;
+                          }
+                          else
+                          {
+                              /* Otherwise keep drawing smaller explosions */
+                              Graphics_fillCircle(&g_sContext, explosions[i][x], explosions[i][y], explosions[i][r]);
+                          }
+                      }
+                  }
+              }
             break;
         }
         default: break;
