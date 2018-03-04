@@ -100,7 +100,8 @@ void main(void)
 
     while (1)
     {
-
+        //GPIO_setOutputHighOnPin(GPIO_PORT_P2, GPIO_PIN5);
+        //GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN5);
     }
 }
 
@@ -660,4 +661,17 @@ __interrupt void TIMER1_A1_ISR(void)
         }
         default: break;
       }
+}
+
+#pragma vector=TIMER2_A1_VECTOR
+__interrupt void TIMER2_A1_ISR(void)
+{
+  switch (__even_in_range(TA0IV, 4))
+  {
+      case 4: // CCR2 IFG
+          //GPIO_toggleOutputOnPin(GPIO_PORT_P2, GPIO_PIN5);
+          break;
+      default:
+          break;
+  }
 }
