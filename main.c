@@ -11,6 +11,7 @@ void initGPIO(void);
 void initJoystickADC(void);
 void initObjects(void);
 uint32_t mapValToRange(uint32_t x, uint32_t input_min, uint32_t input_max, uint32_t output_min, uint32_t output_max);
+void drawSpacecraft(void);
 
 #define MCLK_SMCLK_DESIRED_FREQUENCY_IN_KHZ 25000
 
@@ -58,6 +59,15 @@ uint16_t bullets[NUM_BULLETS][2];
 uint16_t previousBullets[NUM_BULLETS][2];
 uint8_t currentBullet = 0;
 
+
+uint32_t *initializeStack(void (*func)(void), uint32_t *stackLocation);
+#define NUM_TASKS (uint8_t)1
+uint32_t *stack_pointer[NUM_TASKS]; // Stores the stack pointer for each task
+#define STACK_SIZE 64
+int8_t currentRunningTask;
+uint32_t task1Stack[STACK_SIZE];
+uint32_t *tempSP;
+
 /**
  * main.c
  */
@@ -65,25 +75,28 @@ void main(void)
 {
     //uint8_t i;
 
-	initWatchdog();
-	initClocks();
-	initTimers();
-	initGPIO();
-	initJoystickADC();
-	initObjects();
-	
-	/* Initializes display */
-	Crystalfontz128x128_Init();
+  initWatchdog();
+  initClocks();
+  initTimers();
+  initGPIO();
+  initJoystickADC();
+  initObjects();
+  
+  /* Initializes display */
+  Crystalfontz128x128_Init();
 
-	/* Set default screen orientation */
-	Crystalfontz128x128_SetOrientation(LCD_ORIENTATION_UP);
+  /* Set default screen orientation */
+  Crystalfontz128x128_SetOrientation(LCD_ORIENTATION_UP);
 
-	 /* Initializes graphics context */
+   /* Initializes graphics context */
     Graphics_initContext(&g_sContext, &g_sCrystalfontz128x128);
     Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_GREEN);
     Graphics_setBackgroundColor(&g_sContext, GRAPHICS_COLOR_RED);
     GrContextFontSet(&g_sContext, &g_sFontFixed6x8);
     Graphics_clearDisplay(&g_sContext);
+
+    stack_pointer[0] = initializeStack(drawSpacecraft, &task1Stack[STACK_SIZE-1]);
+    currentRunningTask = NUM_TASKS;
 
     // Globally enable interrupts
     __bis_SR_register(GIE);
@@ -96,13 +109,56 @@ void main(void)
     // Start the timer to trigger the Joystick ADC
     Timer_A_startCounter(TIMER_A0_BASE, TIMER_A_UP_MODE);
     // Start the timer to trigger the Aliens
-    Timer_A_startCounter(TIMER_A1_BASE, TIMER_A_UP_MODE);
+    //Timer_A_startCounter(TIMER_A1_BASE, TIMER_A_UP_MODE);
+
+    // Start the timer to trigger the scheduler
+    Timer_A_startCounter(TIMER_A2_BASE, TIMER_A_UP_MODE);
 
     while (1)
     {
-        //GPIO_setOutputHighOnPin(GPIO_PORT_P2, GPIO_PIN5);
-        //GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN5);
+
     }
+}
+
+uint32_t *initializeStack(void (*func)(void), uint32_t *stackLocation)
+{
+    uint32_t *lStackLocation;
+    uint16_t *sStackLocation, sTemp;
+
+    sStackLocation = (uint16_t*)stackLocation;
+    sTemp = (uint16_t)func;
+    *sStackLocation = sTemp;
+    sStackLocation--;
+    *sStackLocation = (uint16_t)(((0xF0000 & (uint32_t)func) >> 4) | GIE);
+
+    sStackLocation -= sizeof(uint32_t)/2;
+    lStackLocation = (uint32_t*)sStackLocation;
+
+    *lStackLocation = (uint32_t)0xFFFF;
+    lStackLocation--;
+    *lStackLocation = (uint32_t)0xFFFF;
+    lStackLocation--;
+    *lStackLocation = (uint32_t)0xFFFF;
+    lStackLocation--;
+    *lStackLocation = (uint32_t)0xFFFF;
+    lStackLocation--;
+    *lStackLocation = (uint32_t)0xFFFF;
+    lStackLocation--;
+    *lStackLocation = (uint32_t)0xFFFF;
+    lStackLocation--;
+    *lStackLocation = (uint32_t)0xFFFF;
+    lStackLocation--;
+    *lStackLocation = (uint32_t)0xFFFF;
+    lStackLocation--;
+    *lStackLocation = (uint32_t)0xFFFF;
+    lStackLocation--;
+    *lStackLocation = (uint32_t)0xFFFF;
+    lStackLocation--;
+    *lStackLocation = (uint32_t)0xFFFF;
+    lStackLocation--;
+    *lStackLocation = (uint32_t)0xFFFF;
+
+    return lStackLocation;
 }
 
 void initWatchdog(void)
@@ -228,8 +284,9 @@ void initJoystickADC(void)
     // so interrupt fires when sequence mem0 - mem1 or x - y is completed
     ADC12_A_clearInterrupt(ADC12_A_BASE,
         ADC12IFG1);
-    ADC12_A_enableInterrupt(ADC12_A_BASE,
-        ADC12IE1);
+    ADC12_A_clearInterrupt(ADC12_A_BASE,
+            ADC12IFG0);
+    //ADC12_A_enableInterrupt(ADC12_A_BASE, ADC12IE1);
 }
 
 // https://stackoverflow.com/questions/5731863/mapping-a-numeric-range-onto-another
@@ -265,16 +322,16 @@ void initTimers(void)
      3200, // Counted up to in 100 milliseconds (.1 second) with a 32 KHz clock
     };
 
-    Timer_A_initCompareModeParam compareParam2 =
-    {
-     TIMER_A_CAPTURECOMPARE_REGISTER_2,
-     TIMER_A_CAPTURECOMPARE_INTERRUPT_ENABLE,
-     TIMER_A_OUTPUTMODE_OUTBITVALUE,
-     1600, // Counted up to in 50 milliseconds (.05 second) with a 32 KHz clock
-    };
+//    Timer_A_initCompareModeParam compareParam2 =
+//    {
+//     TIMER_A_CAPTURECOMPARE_REGISTER_2,
+//     TIMER_A_CAPTURECOMPARE_INTERRUPT_ENABLE,
+//     TIMER_A_OUTPUTMODE_OUTBITVALUE,
+//     1600, // Counted up to in 50 milliseconds (.05 second) with a 32 KHz clock
+//    };
 
     Timer_A_initCompareMode(TIMER_A0_BASE, &compareParam1);
-    Timer_A_initCompareMode(TIMER_A0_BASE, &compareParam2);
+    //Timer_A_initCompareMode(TIMER_A0_BASE, &compareParam2);
 
     Timer_A_clearTimerInterrupt(TIMER_A0_BASE);
 
@@ -283,68 +340,82 @@ void initTimers(void)
                                          TIMER_A_CAPTURECOMPARE_REGISTER_1 +
                                          TIMER_A_CAPTURECOMPARE_REGISTER_2);
 
+    Timer_A_initUpModeParam upModeParamA2_1=
+            {
+             TIMER_A_CLOCKSOURCE_SMCLK, // 32 KHz clock => Period is .031 milliseconds
+             TIMER_A_CLOCKSOURCE_DIVIDER_1,
+             3200,
+             TIMER_A_TAIE_INTERRUPT_DISABLE,
+             TIMER_A_CCIE_CCR0_INTERRUPT_ENABLE,
+             TIMER_A_DO_CLEAR,
+             false
+            };
+        Timer_A_initUpMode(TIMER_A2_BASE, &upModeParamA2_1);
+        Timer_A_clearTimerInterrupt(TIMER_A2_BASE);
+        Timer_A_clearCaptureCompareInterrupt(TIMER_A0_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_0);
+
     /* Alien timer */
-    Timer_A_initUpModeParam upModeParamA1=
-    {
-     TIMER_A_CLOCKSOURCE_ACLK, // 32 KHz clock => Period is .031 milliseconds
-     TIMER_A_CLOCKSOURCE_DIVIDER_1,
-     6400,
-     TIMER_A_TAIE_INTERRUPT_DISABLE,
-     TIMER_A_CCIE_CCR0_INTERRUPT_DISABLE,
-     TIMER_A_DO_CLEAR,
-     false
-    };
-
-    Timer_A_initUpMode(TIMER_A1_BASE, &upModeParamA1);
-
-    Timer_A_initCompareModeParam compareParam1A1 =
-       {
-        TIMER_A_CAPTURECOMPARE_REGISTER_1,
-        TIMER_A_CAPTURECOMPARE_INTERRUPT_ENABLE,
-        TIMER_A_OUTPUTMODE_SET_RESET,
-        6400, // Counted up to in 200 milliseconds (.2 second) with a 32 KHz clock
-       };
-
-    Timer_A_initCompareMode(TIMER_A1_BASE, &compareParam1A1);
-    Timer_A_clearTimerInterrupt(TIMER_A1_BASE);
-    Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE,
-                                        TIMER_A_CAPTURECOMPARE_REGISTER_0 +
-                                        TIMER_A_CAPTURECOMPARE_REGISTER_1);
+//    Timer_A_initUpModeParam upModeParamA1=
+//    {
+//     TIMER_A_CLOCKSOURCE_ACLK, // 32 KHz clock => Period is .031 milliseconds
+//     TIMER_A_CLOCKSOURCE_DIVIDER_1,
+//     6400,
+//     TIMER_A_TAIE_INTERRUPT_DISABLE,
+//     TIMER_A_CCIE_CCR0_INTERRUPT_DISABLE,
+//     TIMER_A_DO_CLEAR,
+//     false
+//    };
+//
+//    Timer_A_initUpMode(TIMER_A1_BASE, &upModeParamA1);
+//
+//    Timer_A_initCompareModeParam compareParam1A1 =
+//       {
+//        TIMER_A_CAPTURECOMPARE_REGISTER_1,
+//        TIMER_A_CAPTURECOMPARE_INTERRUPT_ENABLE,
+//        TIMER_A_OUTPUTMODE_SET_RESET,
+//        6400, // Counted up to in 200 milliseconds (.2 second) with a 32 KHz clock
+//       };
+//
+//    Timer_A_initCompareMode(TIMER_A1_BASE, &compareParam1A1);
+//    Timer_A_clearTimerInterrupt(TIMER_A1_BASE);
+//    Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE,
+//                                        TIMER_A_CAPTURECOMPARE_REGISTER_0 +
+//                                        TIMER_A_CAPTURECOMPARE_REGISTER_1);
 }
 
-#pragma vector=ADC12_VECTOR
-__interrupt void ADC12_ISR(void)
-{
-    switch (__even_in_range(ADC12IV, 8))
-    {
-        case  8: //Vector  8:  ADC12IFG1
-            /* Store the spacecrafts previous position */
-            previousSpacecraftPosition[x] =  spacecraftPosition[x];
-            previousSpacecraftPosition[y] =  spacecraftPosition[y];
-            /* Store the spacecrafts new position */
-            spacecraftPosition[x] = mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_0), 0UL, 255UL, 0UL, 127UL);
-            /* Invert the y values so when the joystick goes up y goes down */
-            spacecraftPosition[y] = 0x7F & ~mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_1), 0UL, 255UL, 0UL, 127UL);
-            /* If the spacecraft is in a new position clear its old position and redraw it */
-              if (previousSpacecraftPosition[x] != spacecraftPosition[x] || previousSpacecraftPosition[y] != spacecraftPosition[y])
-              {
-                /* Clear the spacecrafts previous position */
-                  spacecraftRect.xMax = previousSpacecraftPosition[x] + 2;
-                  spacecraftRect.xMin = previousSpacecraftPosition[x] - 2;
-                  spacecraftRect.yMax = previousSpacecraftPosition[y] + 2;
-                  spacecraftRect.yMin = previousSpacecraftPosition[y] - 2;
-                Graphics_fillRectangleOnDisplay(g_sContext.display, &spacecraftRect, g_sContext.background);
-                /* Draw it's new position */
-                spacecraftRect.xMax = spacecraftPosition[x] + 2;
-                spacecraftRect.xMin = spacecraftPosition[x] - 2;
-                spacecraftRect.yMax = spacecraftPosition[y] + 2;
-                spacecraftRect.yMin = spacecraftPosition[y] - 2;
-                Graphics_fillRectangle(&g_sContext, &spacecraftRect);
-              }
-            break;
-        default: break;
-    }
-}
+//#pragma vector=ADC12_VECTOR
+//__interrupt void ADC12_ISR(void)
+//{
+//    switch (__even_in_range(ADC12IV, 8))
+//    {
+//        case  8: //Vector  8:  ADC12IFG1
+//            /* Store the spacecrafts previous position */
+//            previousSpacecraftPosition[x] =  spacecraftPosition[x];
+//            previousSpacecraftPosition[y] =  spacecraftPosition[y];
+//            /* Store the spacecrafts new position */
+//            spacecraftPosition[x] = mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_0), 0UL, 255UL, 0UL, 127UL);
+//            /* Invert the y values so when the joystick goes up y goes down */
+//            spacecraftPosition[y] = 0x7F & ~mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_1), 0UL, 255UL, 0UL, 127UL);
+//            /* If the spacecraft is in a new position clear its old position and redraw it */
+//              if (previousSpacecraftPosition[x] != spacecraftPosition[x] || previousSpacecraftPosition[y] != spacecraftPosition[y])
+//              {
+//                /* Clear the spacecrafts previous position */
+//                  spacecraftRect.xMax = previousSpacecraftPosition[x] + 2;
+//                  spacecraftRect.xMin = previousSpacecraftPosition[x] - 2;
+//                  spacecraftRect.yMax = previousSpacecraftPosition[y] + 2;
+//                  spacecraftRect.yMin = previousSpacecraftPosition[y] - 2;
+//                Graphics_fillRectangleOnDisplay(g_sContext.display, &spacecraftRect, g_sContext.background);
+//                /* Draw it's new position */
+//                spacecraftRect.xMax = spacecraftPosition[x] + 2;
+//                spacecraftRect.xMin = spacecraftPosition[x] - 2;
+//                spacecraftRect.yMax = spacecraftPosition[y] + 2;
+//                spacecraftRect.yMin = spacecraftPosition[y] - 2;
+//                Graphics_fillRectangle(&g_sContext, &spacecraftRect);
+//              }
+//            break;
+//        default: break;
+//    }
+//}
 
 #pragma vector=TIMER0_A1_VECTOR
 __interrupt void TIMER0_A1_ISR(void)
@@ -394,7 +465,7 @@ __interrupt void TIMER0_A1_ISR(void)
                   3200,
                   TIMER_A_CAPTURECOMPARE_REGISTER_2,
                   TIMER_A_OUTPUTMODE_RESET_SET,
-                  3000
+                  320 // 10% duty cycle
                  };
                  Timer_A_outputPWM(TIMER_A2_BASE, &pwmBuzzerParam1);
                  pwmFireCounter = 0;
@@ -494,7 +565,7 @@ __interrupt void TIMER0_A1_ISR(void)
                                   3200,
                                   TIMER_A_CAPTURECOMPARE_REGISTER_2,
                                   TIMER_A_OUTPUTMODE_RESET_SET,
-                                  3000
+                                  1600 // 50% duty cycle
                                  };
                                  Timer_A_outputPWM(TIMER_A2_BASE, &pwmBuzzerParam1);
                                  pwmExplosionCounter = 0;
@@ -663,15 +734,71 @@ __interrupt void TIMER1_A1_ISR(void)
       }
 }
 
-#pragma vector=TIMER2_A1_VECTOR
-__interrupt void TIMER2_A1_ISR(void)
+
+void drawSpacecraft(void)
 {
-  switch (__even_in_range(TA0IV, 4))
-  {
-      case 4: // CCR2 IFG
-          //GPIO_toggleOutputOnPin(GPIO_PORT_P2, GPIO_PIN5);
-          break;
-      default:
-          break;
-  }
+    while (1)
+    {
+     if (ADC12_A_getInterruptStatus(ADC12_A_BASE, ADC12_A_IFG1))
+     {
+        /* Store the spacecrafts previous position */
+        previousSpacecraftPosition[x] =  spacecraftPosition[x];
+        previousSpacecraftPosition[y] =  spacecraftPosition[y];
+        /* Store the spacecrafts new position */
+        spacecraftPosition[x] = mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_0), 0UL, 255UL, 0UL, 127UL);
+        /* Invert the y values so when the joystick goes up y goes down */
+        spacecraftPosition[y] = 0x7F & ~mapValToRange((uint32_t)ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_1), 0UL, 255UL, 0UL, 127UL);
+        /* If the spacecraft is in a new position clear its old position and redraw it */
+          if (previousSpacecraftPosition[x] != spacecraftPosition[x] || previousSpacecraftPosition[y] != spacecraftPosition[y])
+          {
+            /* Clear the spacecrafts previous position */
+              spacecraftRect.xMax = previousSpacecraftPosition[x] + 2;
+              spacecraftRect.xMin = previousSpacecraftPosition[x] - 2;
+              spacecraftRect.yMax = previousSpacecraftPosition[y] + 2;
+              spacecraftRect.yMin = previousSpacecraftPosition[y] - 2;
+            Graphics_fillRectangleOnDisplay(g_sContext.display, &spacecraftRect, g_sContext.background);
+            /* Draw it's new position */
+            spacecraftRect.xMax = spacecraftPosition[x] + 2;
+            spacecraftRect.xMin = spacecraftPosition[x] - 2;
+            spacecraftRect.yMax = spacecraftPosition[y] + 2;
+            spacecraftRect.yMin = spacecraftPosition[y] - 2;
+            Graphics_fillRectangle(&g_sContext, &spacecraftRect);
+          }
+        }
+    }
+}
+
+
+#pragma vector=TIMER2_A0_VECTOR
+__interrupt void TIMER2_A0_ISR(void)
+{
+    /* Undo the compiler register pushing */
+    __asm(" popm.a #1, r15");
+    if (currentRunningTask == NUM_TASKS)
+    {
+      /* Don't do anything because this is the first task to run so it still has registers on its stack
+       * since that is how the task stack was initialized */
+    }
+    else
+    {
+        /* Push the general purpose registers R4 - R15 onto the stack saving the context of the current task */
+        __asm(" push.a #12, r15");
+        /* Save the stack pointer of the executing task */
+        __asm(" mov.a sp, tempSP");
+        stack_pointer[currentRunningTask] = tempSP;
+    }
+    /* Switch the task to the next one by putting the stack pointer of the next task into the Stack Pointer register */
+    /* Use round robin scheduling when choosing tasks */
+    if (currentRunningTask < (NUM_TASKS - 1))
+    {
+        currentRunningTask++;
+    }
+    else
+    {
+        currentRunningTask = 0;
+    }
+    tempSP = stack_pointer[currentRunningTask];
+    __asm(" mov.a tempSP, sp");
+    __asm(" popm.a #12, r15");
+    __asm(" reti");
 }
