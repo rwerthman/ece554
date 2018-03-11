@@ -37,9 +37,9 @@
 //*****************************************************************************
 
 #include <grlib/grlib.h>
-#include "Crystalfontz128x128_ST7735.h"
+#include "inc/Crystalfontz128x128_ST7735.h"
 #include <driverlib/MSP430F5xx_6xx/driverlib.h>
-#include <HAL_MSP_F5529_Crystalfontz128x128_ST7735.h>
+#include <inc/HAL_MSP_F5529_Crystalfontz128x128_ST7735.h>
 #include <stdint.h>
 
 uint8_t Lcd_Orientation;
