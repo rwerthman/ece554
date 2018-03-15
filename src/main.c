@@ -3,6 +3,9 @@
  * 1. Buffering for ADC input so all of the input will be drawn?
  * 2. Semaphores or mailboxes for shared resources between tasks
  * 3. Pull out scheduler into separate header and c file
+ *
+ * High pitch = small period
+ * Low pitch = high period
  */
 
 #include <msp430.h>
@@ -14,8 +17,9 @@
 
 #define MCLK_SMCLK_DESIRED_FREQUENCY_IN_KHZ 25000
 #define NUM_ALIENS (uint8_t)3
+#define NUM_EXPLOSIONS (uint8_t)3
 #define NUM_BULLETS (uint8_t)10
-#define NUM_TASKS (uint8_t)3
+#define NUM_TASKS (uint8_t)4
 #define STACK_SIZE 64 // 64*32 = 2048 btyes
 
 /* Init function */
@@ -40,6 +44,9 @@ uint32_t drawAliensStack[STACK_SIZE];
 
 void drawExplosions(void);
 uint32_t drawExplosionsStack[STACK_SIZE];
+
+void detectAndDebounceFireButtonPress(void);
+uint32_t detectAndDebounceFireButtonPressStack[STACK_SIZE];
 
 uint32_t *stack_pointer[NUM_TASKS]; // Stores the stack pointer for each task
 int8_t currentRunningTask;
@@ -134,6 +141,8 @@ void main(void)
                                        &drawAliensStack[STACK_SIZE - 1]);
   stack_pointer[2] = initializeStack(drawExplosions,
                                        &drawExplosionsStack[STACK_SIZE - 1]);
+  stack_pointer[3] = initializeStack(detectAndDebounceFireButtonPress,
+                                         &detectAndDebounceFireButtonPressStack[STACK_SIZE - 1]);
 
   currentRunningTask = NUM_TASKS;
 
@@ -145,12 +154,10 @@ void main(void)
   ADC12_A_MEMORY_0,
                           ADC12_A_REPEATED_SEQOFCHANNELS);
 
-  // Start the timer to trigger the Joystick ADC
+  // Start the timer to trigger the Joystick ADC and scheduler
   Timer_A_startCounter(TIMER_A0_BASE, TIMER_A_UP_MODE);
   // Start the timer to trigger the Aliens
   Timer_A_startCounter(TIMER_A1_BASE, TIMER_A_UP_MODE);
-  // Start the timer to trigger the scheduler
-  Timer_A_startCounter(TIMER_A2_BASE, TIMER_A_UP_MODE);
 
   while (1)
   {
@@ -305,6 +312,7 @@ void initTimers(void)
       TIMER_A_DO_CLEAR,
       false };
   Timer_A_initUpMode(TIMER_A0_BASE, &upModeParam);
+
   Timer_A_initCompareModeParam compareParam1 = {
       TIMER_A_CAPTURECOMPARE_REGISTER_1,
       TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
@@ -312,51 +320,71 @@ void initTimers(void)
       };
   Timer_A_initCompareMode(TIMER_A0_BASE, &compareParam1);
 
-  /* Bullet timer */
-//    Timer_A_initCompareModeParam compareParam2 =
-//    {
-//     TIMER_A_CAPTURECOMPARE_REGISTER_2,
-//     TIMER_A_CAPTURECOMPARE_INTERRUPT_ENABLE,
-//     TIMER_A_OUTPUTMODE_OUTBITVALUE,
-//     1600, // Counted up to in 50 milliseconds (.05 second) with a 32 KHz clock
-//    };
-  //Timer_A_initCompareMode(TIMER_A0_BASE, &compareParam2);
+  /* Explosion timer */
+  Timer_A_initCompareModeParam compareParam3 = {
+        TIMER_A_CAPTURECOMPARE_REGISTER_3,
+        TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
+        TIMER_A_OUTPUTMODE_SET_RESET, 320, // Counted up to in 10 milliseconds (.1 second) with a 32 KHz clock
+        };
+    Timer_A_initCompareMode(TIMER_A0_BASE, &compareParam3);
+
+  /* Scheduler timer */
+    Timer_A_initCompareModeParam compareParam2 =
+    {
+     TIMER_A_CAPTURECOMPARE_REGISTER_2,
+     TIMER_A_CAPTURECOMPARE_INTERRUPT_ENABLE,
+     TIMER_A_OUTPUTMODE_SET_RESET,
+     320, //  10 milliseconds
+    };
+  Timer_A_initCompareMode(TIMER_A0_BASE, &compareParam2);
 
   Timer_A_clearTimerInterrupt(TIMER_A0_BASE);
 
   Timer_A_clearCaptureCompareInterrupt(TIMER_A0_BASE,
   TIMER_A_CAPTURECOMPARE_REGISTER_0 +
   TIMER_A_CAPTURECOMPARE_REGISTER_1 +
-  TIMER_A_CAPTURECOMPARE_REGISTER_2);
+  TIMER_A_CAPTURECOMPARE_REGISTER_2 +
+  TIMER_A_CAPTURECOMPARE_REGISTER_3);
 
   /* Scheduler timer */
-  Timer_A_initUpModeParam upModeParamA2_1 = {
-      TIMER_A_CLOCKSOURCE_ACLK,
-      TIMER_A_CLOCKSOURCE_DIVIDER_1,
-      320, // Count up to this in 10 milliseconds
-      TIMER_A_TAIE_INTERRUPT_DISABLE,
-      TIMER_A_CCIE_CCR0_INTERRUPT_ENABLE,
-      TIMER_A_DO_CLEAR,
-      false };
-  Timer_A_initUpMode(TIMER_A2_BASE, &upModeParamA2_1);
-  Timer_A_clearTimerInterrupt(TIMER_A2_BASE);
-  Timer_A_clearCaptureCompareInterrupt(TIMER_A0_BASE,
-                                       TIMER_A_CAPTURECOMPARE_REGISTER_0);
+//  Timer_A_initUpModeParam upModeParamA2_1 = {
+//      TIMER_A_CLOCKSOURCE_ACLK,
+//      TIMER_A_CLOCKSOURCE_DIVIDER_1,
+//      320, // Count up to this in 10 milliseconds
+//      TIMER_A_TAIE_INTERRUPT_DISABLE,
+//      TIMER_A_CCIE_CCR0_INTERRUPT_ENABLE,
+//      TIMER_A_DO_CLEAR,
+//      false };
+//  Timer_A_initUpMode(TIMER_A2_BASE, &upModeParamA2_1);
+//  Timer_A_clearTimerInterrupt(TIMER_A2_BASE);
+//  Timer_A_clearCaptureCompareInterrupt(TIMER_A0_BASE,
+//                                       TIMER_A_CAPTURECOMPARE_REGISTER_0);
 
   /* Alien timer */
-    Timer_A_initUpModeParam upModeParamA1=
+    Timer_A_initUpModeParam upModeParamA1_0 =
     {
      TIMER_A_CLOCKSOURCE_ACLK, // 32 KHz clock => Period is .031 milliseconds
      TIMER_A_CLOCKSOURCE_DIVIDER_1,
-     3200,
+     3200, // 100 milliseconds
      TIMER_A_TAIE_INTERRUPT_DISABLE,
      TIMER_A_CCIE_CCR0_INTERRUPT_DISABLE,
      TIMER_A_DO_CLEAR,
      false
     };
-    Timer_A_initUpMode(TIMER_A1_BASE, &upModeParamA1);
+    Timer_A_initUpMode(TIMER_A1_BASE, &upModeParamA1_0);
     Timer_A_clearTimerInterrupt(TIMER_A1_BASE);
     Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_0);
+
+    /* Bullet timer */
+    Timer_A_initCompareModeParam compareParamA1_1 =
+        {
+         TIMER_A_CAPTURECOMPARE_REGISTER_1,
+         TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
+         TIMER_A_OUTPUTMODE_SET_RESET,
+         2*320, // 20 milliseconds
+        };
+    Timer_A_initCompareMode(TIMER_A1_BASE, &compareParamA1_1);
+    Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_1);
 //
 //    Timer_A_initCompareModeParam compareParam1A1 =
 //       {
@@ -373,191 +401,190 @@ void initTimers(void)
 //                                        TIMER_A_CAPTURECOMPARE_REGISTER_1);
 }
 
-#pragma vector=TIMER0_A1_VECTOR
-__interrupt void TIMER0_A1_ISR(void)
+void detectAndDebounceFireButtonPress(void)
 {
-  switch (__even_in_range(TA0IV, 4))
+  while(1)
   {
-  case 4: // CCR2 IFG
-    /* Read the "shoot" button input */
-    currentFireButtonState = GPIO_getInputPinValue(GPIO_PORT_P3, GPIO_PIN7);
-    /* Debounce the button until next interrupt (50 milliseconds)
-     * so wait another 50 milliseconds to see if the button is still low
-     */
-    if (currentFireButtonState
-        == previousFireButtonState&& currentFireButtonState == GPIO_INPUT_PIN_LOW)
+    if (Timer_A_getCaptureCompareInterruptStatus(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_1, TIMER_A_CAPTURECOMPARE_INTERRUPT_FLAG))
     {
-      /* If the button is low shoot a bullet */
-      /* First store the bullets starting position */
-      previousBullets[currentBullet][x] = bullets[currentBullet][x];
-      previousBullets[currentBullet][y] = bullets[currentBullet][y];
-      /* Set the bullet to the position of the spacecraft when
-       * it was fired.
+        Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_1);
+        /* Read the "shoot" button input */
+      currentFireButtonState = GPIO_getInputPinValue(GPIO_PORT_P3, GPIO_PIN7);
+      /* Debounce the button until next interrupt (50 milliseconds)
+       * so wait another 50 milliseconds to see if the button is still low
        */
-      bullets[currentBullet][x] = spacecraftPosition[x];
-      /* Subtract from the spacecraft position so the bullet looks like it is ahead of the
-       * spacecraft when we shoot it and also we don't
-       * clear the spacecraft when we clear the bullet
-       */
-      bullets[currentBullet][y] = spacecraftPosition[y] - 5;
-      /* Advance to the next bullet or back to 0 if there isn't
-       * another bullet
-       */
-      if (currentBullet < NUM_BULLETS)
+      if (currentFireButtonState
+          == previousFireButtonState&& currentFireButtonState == GPIO_INPUT_PIN_LOW)
       {
-        currentBullet++;
-      }
-      else
-      {
-        currentBullet = 0;
-      }
-      /* Reset previous button state to be ready for the next button press */
-      previousFireButtonState = GPIO_INPUT_PIN_HIGH;
-
-      /* Generate PWM for the buzzer */
-      Timer_A_outputPWMParam pwmBuzzerParam1 = {
-          TIMER_A_CLOCKSOURCE_ACLK,
-          TIMER_A_CLOCKSOURCE_DIVIDER_1,
-          3200,
-          TIMER_A_CAPTURECOMPARE_REGISTER_2,
-          TIMER_A_OUTPUTMODE_RESET_SET, 320 // 10% duty cycle
-          };
-      Timer_A_outputPWM(TIMER_A2_BASE, &pwmBuzzerParam1);
-      pwmFireCounter = 0;
-    }
-    else
-    {
-      previousFireButtonState = currentFireButtonState;
-      /* Let the pwm signal to the buzzer run for 3 interrupts */
-      if (pwmFireCounter < 3)
-      {
-        pwmFireCounter += 1;
-      }
-      else if (pwmFireCounter == 3)
-      {
-        Timer_A_stop(TIMER_A2_BASE);
-        pwmFireCounter = 4;
-      }
-
-      /* If we aren't shooting and we can make the explosion noise */
-      if (pwmExplosionCounter < 3 && pwmFireCounter == 4)
-      {
-        pwmExplosionCounter += 1;
-      }
-      /* If we aren't shooting we can turn off the timer and we are done with the explosion noises */
-      else if (pwmFireCounter == 4 && pwmExplosionCounter == 3)
-      {
-        Timer_A_stop(TIMER_A2_BASE);
-        pwmExplosionCounter = 4;
-      }
-
-    }
-
-    /* Advance the other bullets by clearing their previous positions
-     * and drawing them at their new positions
-     */
-    uint8_t i;
-    for (i = 0; i < NUM_BULLETS ; i++)
-    {
-      /* If the bullets have been shot which means they aren't the
-       * initial values they were set to draw them on the screen
-       */
-      if (bullets[i][x] != 200 && bullets[i][y] != 200)
-      {
-        /* Clear the bullets previous position */
-        bulletsRect.xMax = previousBullets[i][x] + 2;
-        bulletsRect.xMin = previousBullets[i][x] - 2;
-        bulletsRect.yMax = previousBullets[i][y] + 2;
-        bulletsRect.yMin = previousBullets[i][y] - 2;
-        Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect,
-                                        g_sContext.background);
-        /* If the bullet has moved off the screen reset
-         * it.
+        /* If the button is low shoot a bullet */
+        /* First store the bullets starting position */
+        previousBullets[currentBullet][x] = bullets[currentBullet][x];
+        previousBullets[currentBullet][y] = bullets[currentBullet][y];
+        /* Set the bullet to the position of the spacecraft when
+         * it was fired.
          */
-        if (bullets[i][y] <= 0)
+        bullets[currentBullet][x] = spacecraftPosition[x];
+        /* Subtract from the spacecraft position so the bullet looks like it is ahead of the
+         * spacecraft when we shoot it and also we don't
+         * clear the spacecraft when we clear the bullet
+         */
+        bullets[currentBullet][y] = spacecraftPosition[y] - 5;
+        /* Advance to the next bullet or back to 0 if there isn't
+         * another bullet
+         */
+        if (currentBullet < NUM_BULLETS)
         {
-          bullets[i][x] = 200;
-          bullets[i][y] = 200;
-
+          currentBullet++;
         }
         else
         {
-          /* Store the bullets position before moving to the next one */
-          previousBullets[i][x] = bullets[i][x];
-          previousBullets[i][y] = bullets[i][y];
-          /* Show the bullets moving up to the top of the screen */
-          bullets[i][y]--;
+          currentBullet = 0;
+        }
+        /* Reset previous button state to be ready for the next button press */
+        previousFireButtonState = GPIO_INPUT_PIN_HIGH;
 
-          bulletsRect.xMax = bullets[i][x] + 2;
-          bulletsRect.xMin = bullets[i][x] - 2;
-          bulletsRect.yMax = bullets[i][y] + 2;
-          bulletsRect.yMin = bullets[i][y] - 2;
-          Graphics_fillRectangle(&g_sContext, &bulletsRect);
-          /* Check if any of the aliens have been hit
-           * by the bullet
+        /* Generate PWM for the buzzer */
+        Timer_A_outputPWMParam pwmBuzzerParam1 = {
+            TIMER_A_CLOCKSOURCE_SMCLK,
+            TIMER_A_CLOCKSOURCE_DIVIDER_1,
+            60000,
+            TIMER_A_CAPTURECOMPARE_REGISTER_2,
+            TIMER_A_OUTPUTMODE_RESET_SET, 60000/2
+            };
+        Timer_A_outputPWM(TIMER_A2_BASE, &pwmBuzzerParam1);
+        pwmFireCounter = 0;
+      }
+      else
+      {
+        previousFireButtonState = currentFireButtonState;
+        /* Let the pwm signal to the buzzer run for 3 interrupts */
+        if (pwmFireCounter < 3)
+        {
+          pwmFireCounter += 1;
+        }
+        else if (pwmFireCounter == 3)
+        {
+          Timer_A_stop(TIMER_A2_BASE);
+          pwmFireCounter = 4;
+        }
+
+        /* If we aren't shooting and we can make the explosion noise */
+        if (pwmExplosionCounter < 3 && pwmFireCounter == 4)
+        {
+          pwmExplosionCounter += 1;
+        }
+        /* If we aren't shooting we can turn off the timer and we are done with the explosion noises */
+        else if (pwmFireCounter == 4 && pwmExplosionCounter == 3)
+        {
+          Timer_A_stop(TIMER_A2_BASE);
+          pwmExplosionCounter = 4;
+        }
+
+      }
+
+      /* Advance the other bullets by clearing their previous positions
+       * and drawing them at their new positions
+       */
+      uint8_t i;
+      for (i = 0; i < NUM_BULLETS ; i++)
+      {
+        /* If the bullets have been shot which means they aren't the
+         * initial values they were set to draw them on the screen
+         */
+        if (bullets[i][x] != 200 && bullets[i][y] != 200)
+        {
+          /* Clear the bullets previous position */
+          bulletsRect.xMax = previousBullets[i][x] + 2;
+          bulletsRect.xMin = previousBullets[i][x] - 2;
+          bulletsRect.yMax = previousBullets[i][y] + 2;
+          bulletsRect.yMin = previousBullets[i][y] - 2;
+          Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect,
+                                          g_sContext.background);
+          /* If the bullet has moved off the screen reset
+           * it.
            */
-          uint8_t j;
-          for (j = 0; j < NUM_ALIENS ; j++)
+          if (bullets[i][y] <= 0)
           {
-            alienRect.xMax = aliens[j][x] + 2;
-            alienRect.xMin = aliens[j][x] - 2;
-            alienRect.yMax = aliens[j][y] + 2;
-            alienRect.yMin = aliens[j][y] - 2;
+            bullets[i][x] = 200;
+            bullets[i][y] = 200;
 
-            /* If a bullet and alien intersect... */
-            if (Graphics_isRectangleOverlap(&bulletsRect, &alienRect))
+          }
+          else
+          {
+            /* Store the bullets position before moving to the next one */
+            previousBullets[i][x] = bullets[i][x];
+            previousBullets[i][y] = bullets[i][y];
+            /* Show the bullets moving up to the top of the screen */
+            bullets[i][y]--;
+
+            bulletsRect.xMax = bullets[i][x] + 2;
+            bulletsRect.xMin = bullets[i][x] - 2;
+            bulletsRect.yMax = bullets[i][y] + 2;
+            bulletsRect.yMin = bullets[i][y] - 2;
+            Graphics_fillRectangle(&g_sContext, &bulletsRect);
+            /* Check if any of the aliens have been hit
+             * by the bullet
+             */
+            uint8_t j;
+            for (j = 0; j < NUM_ALIENS ; j++)
             {
-              /* Draw an explosion at the alien and bullet  */
-              explosions[j][x] = aliens[j][x];
-              explosions[j][y] = aliens[j][y];
-              explosions[j][r] = 5;
-              explosions[j][s] = 1;
-              explosions[j][d] = 1;
-              /* Generate PWM for the buzzer to make a sound of an explosion */
-              Timer_A_outputPWMParam pwmBuzzerParam1 = {
-                  TIMER_A_CLOCKSOURCE_ACLK,
-                  TIMER_A_CLOCKSOURCE_DIVIDER_1,
-                  3200,
-                  TIMER_A_CAPTURECOMPARE_REGISTER_2,
-                  TIMER_A_OUTPUTMODE_RESET_SET, 1600 // 50% duty cycle
-                  };
-              Timer_A_outputPWM(TIMER_A2_BASE, &pwmBuzzerParam1);
-              pwmExplosionCounter = 0;
-              /* Clear the aliens previous position */
               alienRect.xMax = aliens[j][x] + 2;
               alienRect.xMin = aliens[j][x] - 2;
               alienRect.yMax = aliens[j][y] + 2;
               alienRect.yMin = aliens[j][y] - 2;
-              Graphics_fillRectangleOnDisplay(g_sContext.display, &alienRect,
-                                              g_sContext.background);
-              /* Kill the alien */
-              aliens[j][x] = 200;
-              aliens[j][y] = 200;
 
-              /* Clear the bullet */
-              /* Clear the bullets position */
-              bulletsRect.xMax = bullets[i][x] + 2;
-              bulletsRect.xMin = bullets[i][x] - 2;
-              bulletsRect.yMax = bullets[i][y] + 2;
-              bulletsRect.yMin = bullets[i][y] - 2;
-              Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect,
-                                              g_sContext.background);
+              /* If a bullet and alien intersect... */
+              if (Graphics_isRectangleOverlap(&bulletsRect, &alienRect))
+              {
+                /* Draw an explosion at the alien and bullet  */
+                explosions[j][x] = aliens[j][x];
+                explosions[j][y] = aliens[j][y];
+                explosions[j][r] = 5;
+                explosions[j][s] = 1;
+                explosions[j][d] = 1;
+                /* Generate PWM for the buzzer to make a sound of an explosion */
+                Timer_A_outputPWMParam pwmBuzzerParam1 = {
+                    TIMER_A_CLOCKSOURCE_SMCLK,
+                    TIMER_A_CLOCKSOURCE_DIVIDER_1,
+                    3200,
+                    TIMER_A_CAPTURECOMPARE_REGISTER_2,
+                    TIMER_A_OUTPUTMODE_RESET_SET, 1600 // 50% duty cycle
+                    };
+                Timer_A_outputPWM(TIMER_A2_BASE, &pwmBuzzerParam1);
+                pwmExplosionCounter = 0;
+                /* Clear the aliens previous position */
+                alienRect.xMax = aliens[j][x] + 2;
+                alienRect.xMin = aliens[j][x] - 2;
+                alienRect.yMax = aliens[j][y] + 2;
+                alienRect.yMin = aliens[j][y] - 2;
+                Graphics_fillRectangleOnDisplay(g_sContext.display, &alienRect,
+                                                g_sContext.background);
+                /* Kill the alien */
+                aliens[j][x] = 200;
+                aliens[j][y] = 200;
 
-              /* Set the bullet to its starting values
-               * so it is not redrawn again
-               */
-              bullets[i][x] = 200;
-              bullets[i][y] = 200;
-              previousBullets[i][x] = bullets[i][x];
-              previousBullets[i][y] = bullets[i][y];
+                /* Clear the bullet */
+                /* Clear the bullets position */
+                bulletsRect.xMax = bullets[i][x] + 2;
+                bulletsRect.xMin = bullets[i][x] - 2;
+                bulletsRect.yMax = bullets[i][y] + 2;
+                bulletsRect.yMin = bullets[i][y] - 2;
+                Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect,
+                                                g_sContext.background);
+
+                /* Set the bullet to its starting values
+                 * so it is not redrawn again
+                 */
+                bullets[i][x] = 200;
+                bullets[i][y] = 200;
+                previousBullets[i][x] = bullets[i][x];
+                previousBullets[i][y] = bullets[i][y];
+              }
             }
           }
         }
       }
     }
-    break;
-  default:
-    break;
   }
 }
 
@@ -566,56 +593,60 @@ void drawExplosions(void)
   uint8_t i;
   while (1)
   {
-    /* Advance the explosions */
-    for (i = 0; i < NUM_ALIENS ; i++)
+    if (Timer_A_getCaptureCompareInterruptStatus(TIMER_A0_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_3, TIMER_A_CAPTURECOMPARE_INTERRUPT_FLAG))
     {
-      /* If the explosion has been set to be shown */
-      if (explosions[i][s])
+      Timer_A_clearCaptureCompareInterrupt(TIMER_A0_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_3);
+      /* Advance the explosions */
+      for (i = 0; i < NUM_EXPLOSIONS ; i++)
       {
-        /* If the explosion is set to increase in direction */
-        if (explosions[i][d] == 1)
+        /* If the explosion has been set to be shown */
+        if (explosions[i][s])
         {
-          /* Don't need to clear previous circle because the explosion gets bigger */
-          wait(&sem1, &semC3);
-          Graphics_fillCircle(&g_sContext, explosions[i][x], explosions[i][y],
-                              explosions[i][r]);
-          signal(&sem1, &semC3);
-          explosions[i][r] += 5;
-          /* Max explosion radius should be 10 but we have to go to 15 to draw a circle with radius 10 */
-          if (explosions[i][r] >= 15)
+          /* If the explosion is set to increase in direction */
+          if (explosions[i][d] == 1)
           {
-            explosions[i][d] = 0;
-            explosions[i][r] = 10;
-          }
-        }
-        else
-        {
-          /* Clear previous explosion circle because circle gets smaller */
-          explosionRect.xMax = explosions[i][x] + explosions[i][r];
-          explosionRect.xMin = explosions[i][x] - explosions[i][r];
-          explosionRect.yMax = explosions[i][y] + explosions[i][r];
-          explosionRect.yMin = explosions[i][y] - explosions[i][r];
-          wait(&sem1, &semC3);
-          Graphics_fillRectangleOnDisplay(g_sContext.display, &explosionRect,
-                                          g_sContext.background);
-          signal(&sem1, &semC3);
-          /* Decrease the explosion size */
-          explosions[i][r] -= 5;
-          /* Minimum explosion size is 0.  Stop the explosion
-           * when it gets to that size
-           */
-          if (explosions[i][r] <= 0)
-          {
-            /* Don't draw circle with radius 0 */
-            explosions[i][s] = 0;
-          }
-          else
-          {
-            /* Otherwise keep drawing smaller explosions */
+            /* Don't need to clear previous circle because the explosion gets bigger */
             wait(&sem1, &semC3);
             Graphics_fillCircle(&g_sContext, explosions[i][x], explosions[i][y],
                                 explosions[i][r]);
             signal(&sem1, &semC3);
+            explosions[i][r] += 5;
+            /* Max explosion radius should be 10 but we have to go to 15 to draw a circle with radius 10 */
+            if (explosions[i][r] >= 15)
+            {
+              explosions[i][d] = 0;
+              explosions[i][r] = 10;
+            }
+          }
+          else
+          {
+            /* Clear previous explosion circle because circle gets smaller */
+            explosionRect.xMax = explosions[i][x] + explosions[i][r];
+            explosionRect.xMin = explosions[i][x] - explosions[i][r];
+            explosionRect.yMax = explosions[i][y] + explosions[i][r];
+            explosionRect.yMin = explosions[i][y] - explosions[i][r];
+            wait(&sem1, &semC3);
+            Graphics_fillRectangleOnDisplay(g_sContext.display, &explosionRect,
+                                            g_sContext.background);
+            signal(&sem1, &semC3);
+            /* Decrease the explosion size */
+            explosions[i][r] -= 5;
+            /* Minimum explosion size is 0.  Stop the explosion
+             * when it gets to that size
+             */
+            if (explosions[i][r] <= 0)
+            {
+              /* Don't draw circle with radius 0 */
+              explosions[i][s] = 0;
+            }
+            else
+            {
+              /* Otherwise keep drawing smaller explosions */
+              wait(&sem1, &semC3);
+              Graphics_fillCircle(&g_sContext, explosions[i][x], explosions[i][y],
+                                  explosions[i][r]);
+              signal(&sem1, &semC3);
+            }
           }
         }
       }
@@ -689,7 +720,7 @@ void drawAliens(void)
           }
           else
           {
-            //printf("[Alien] Movement should not be reached");
+            // This shouldn't be reached.
           }
           /* Draw the alien at its new position */
           alienRect.xMax = aliens[i][x] + 2;
@@ -750,38 +781,44 @@ void drawSpacecraft(void)
   }
 }
 
-#pragma vector=TIMER2_A0_VECTOR
-__interrupt void TIMER2_A0_ISR(void)
+#pragma vector=TIMER0_A1_VECTOR
+__interrupt void TIMER0_A1_ISR(void)
 {
-  /* Undo the compiler register pushing */
-  __asm(" popm.a #1, r15");
-  if (currentRunningTask == NUM_TASKS)
-  {
-    /* Don't do anything because this is the first task to run so it still has registers on its stack
-     * since that is how the task stack was initialized */
-  }
-  else
-  {
-    /* Push the general purpose registers R4 - R15 onto the stack saving the context of the current task */
-    __asm(" push.a #12, r15");
-    /* Save the stack pointer of the executing task */
-    __asm(" mov.a sp, tempSP");
-    stack_pointer[currentRunningTask] = tempSP;
-  }
-  /* Switch the task to the next one by putting the stack pointer of the next task into the Stack Pointer register */
-  /* Use round robin scheduling when choosing tasks */
-  if (currentRunningTask < (NUM_TASKS - 1))
-  {
-    currentRunningTask++;
-  }
-  else
-  {
-    currentRunningTask = 0;
-  }
-  tempSP = stack_pointer[currentRunningTask];
-  __asm(" mov.a tempSP, sp");
-  __asm(" popm.a #12, r15");
-  __asm(" reti");
+  switch (__even_in_range(TA0IV, 4))
+    {
+      case 4:
+      {
+        /* Undo the compiler register pushing */
+        __asm(" popm.a #1, r15");
+        if (currentRunningTask == NUM_TASKS)
+        {
+          /* Don't do anything because this is the first task to run so it still has registers on its stack
+           * since that is how the task stack was initialized */
+        }
+        else
+        {
+          /* Push the general purpose registers R4 - R15 onto the stack saving the context of the current task */
+          __asm(" push.a #12, r15");
+          /* Save the stack pointer of the executing task */
+          __asm(" mov.a sp, tempSP");
+          stack_pointer[currentRunningTask] = tempSP;
+        }
+        /* Switch the task to the next one by putting the stack pointer of the next task into the Stack Pointer register */
+        /* Use round robin scheduling when choosing tasks */
+        if (currentRunningTask < (NUM_TASKS - 1))
+        {
+          currentRunningTask++;
+        }
+        else
+        {
+          currentRunningTask = 0;
+        }
+        tempSP = stack_pointer[currentRunningTask];
+        __asm(" mov.a tempSP, sp");
+        __asm(" popm.a #12, r15");
+        __asm(" reti");
+      }
+    }
 }
 
 //#pragma vector=ADC12_VECTOR
@@ -948,6 +985,194 @@ __interrupt void TIMER2_A0_ISR(void)
 //    }
 //    break;
 //  }
+//  default:
+//    break;
+//  }
+//}
+
+//#pragma vector=TIMER0_A1_VECTOR
+//__interrupt void TIMER0_A1_ISR(void)
+//{
+//  switch (__even_in_range(TA0IV, 4))
+//  {
+//  case 4: // CCR2 IFG
+//    /* Read the "shoot" button input */
+//    currentFireButtonState = GPIO_getInputPinValue(GPIO_PORT_P3, GPIO_PIN7);
+//    /* Debounce the button until next interrupt (50 milliseconds)
+//     * so wait another 50 milliseconds to see if the button is still low
+//     */
+//    if (currentFireButtonState
+//        == previousFireButtonState&& currentFireButtonState == GPIO_INPUT_PIN_LOW)
+//    {
+//      /* If the button is low shoot a bullet */
+//      /* First store the bullets starting position */
+//      previousBullets[currentBullet][x] = bullets[currentBullet][x];
+//      previousBullets[currentBullet][y] = bullets[currentBullet][y];
+//      /* Set the bullet to the position of the spacecraft when
+//       * it was fired.
+//       */
+//      bullets[currentBullet][x] = spacecraftPosition[x];
+//      /* Subtract from the spacecraft position so the bullet looks like it is ahead of the
+//       * spacecraft when we shoot it and also we don't
+//       * clear the spacecraft when we clear the bullet
+//       */
+//      bullets[currentBullet][y] = spacecraftPosition[y] - 5;
+//      /* Advance to the next bullet or back to 0 if there isn't
+//       * another bullet
+//       */
+//      if (currentBullet < NUM_BULLETS)
+//      {
+//        currentBullet++;
+//      }
+//      else
+//      {
+//        currentBullet = 0;
+//      }
+//      /* Reset previous button state to be ready for the next button press */
+//      previousFireButtonState = GPIO_INPUT_PIN_HIGH;
+//
+//      /* Generate PWM for the buzzer */
+//      Timer_A_outputPWMParam pwmBuzzerParam1 = {
+//          TIMER_A_CLOCKSOURCE_ACLK,
+//          TIMER_A_CLOCKSOURCE_DIVIDER_1,
+//          3200,
+//          TIMER_A_CAPTURECOMPARE_REGISTER_2,
+//          TIMER_A_OUTPUTMODE_RESET_SET, 320 // 10% duty cycle
+//          };
+//      Timer_A_outputPWM(TIMER_A2_BASE, &pwmBuzzerParam1);
+//      pwmFireCounter = 0;
+//    }
+//    else
+//    {
+//      previousFireButtonState = currentFireButtonState;
+//      /* Let the pwm signal to the buzzer run for 3 interrupts */
+//      if (pwmFireCounter < 3)
+//      {
+//        pwmFireCounter += 1;
+//      }
+//      else if (pwmFireCounter == 3)
+//      {
+//        Timer_A_stop(TIMER_A2_BASE);
+//        pwmFireCounter = 4;
+//      }
+//
+//      /* If we aren't shooting and we can make the explosion noise */
+//      if (pwmExplosionCounter < 3 && pwmFireCounter == 4)
+//      {
+//        pwmExplosionCounter += 1;
+//      }
+//      /* If we aren't shooting we can turn off the timer and we are done with the explosion noises */
+//      else if (pwmFireCounter == 4 && pwmExplosionCounter == 3)
+//      {
+//        Timer_A_stop(TIMER_A2_BASE);
+//        pwmExplosionCounter = 4;
+//      }
+//
+//    }
+//
+//    /* Advance the other bullets by clearing their previous positions
+//     * and drawing them at their new positions
+//     */
+//    uint8_t i;
+//    for (i = 0; i < NUM_BULLETS ; i++)
+//    {
+//      /* If the bullets have been shot which means they aren't the
+//       * initial values they were set to draw them on the screen
+//       */
+//      if (bullets[i][x] != 200 && bullets[i][y] != 200)
+//      {
+//        /* Clear the bullets previous position */
+//        bulletsRect.xMax = previousBullets[i][x] + 2;
+//        bulletsRect.xMin = previousBullets[i][x] - 2;
+//        bulletsRect.yMax = previousBullets[i][y] + 2;
+//        bulletsRect.yMin = previousBullets[i][y] - 2;
+//        Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect,
+//                                        g_sContext.background);
+//        /* If the bullet has moved off the screen reset
+//         * it.
+//         */
+//        if (bullets[i][y] <= 0)
+//        {
+//          bullets[i][x] = 200;
+//          bullets[i][y] = 200;
+//
+//        }
+//        else
+//        {
+//          /* Store the bullets position before moving to the next one */
+//          previousBullets[i][x] = bullets[i][x];
+//          previousBullets[i][y] = bullets[i][y];
+//          /* Show the bullets moving up to the top of the screen */
+//          bullets[i][y]--;
+//
+//          bulletsRect.xMax = bullets[i][x] + 2;
+//          bulletsRect.xMin = bullets[i][x] - 2;
+//          bulletsRect.yMax = bullets[i][y] + 2;
+//          bulletsRect.yMin = bullets[i][y] - 2;
+//          Graphics_fillRectangle(&g_sContext, &bulletsRect);
+//          /* Check if any of the aliens have been hit
+//           * by the bullet
+//           */
+//          uint8_t j;
+//          for (j = 0; j < NUM_ALIENS ; j++)
+//          {
+//            alienRect.xMax = aliens[j][x] + 2;
+//            alienRect.xMin = aliens[j][x] - 2;
+//            alienRect.yMax = aliens[j][y] + 2;
+//            alienRect.yMin = aliens[j][y] - 2;
+//
+//            /* If a bullet and alien intersect... */
+//            if (Graphics_isRectangleOverlap(&bulletsRect, &alienRect))
+//            {
+//              /* Draw an explosion at the alien and bullet  */
+//              explosions[j][x] = aliens[j][x];
+//              explosions[j][y] = aliens[j][y];
+//              explosions[j][r] = 5;
+//              explosions[j][s] = 1;
+//              explosions[j][d] = 1;
+//              /* Generate PWM for the buzzer to make a sound of an explosion */
+//              Timer_A_outputPWMParam pwmBuzzerParam1 = {
+//                  TIMER_A_CLOCKSOURCE_ACLK,
+//                  TIMER_A_CLOCKSOURCE_DIVIDER_1,
+//                  3200,
+//                  TIMER_A_CAPTURECOMPARE_REGISTER_2,
+//                  TIMER_A_OUTPUTMODE_RESET_SET, 1600 // 50% duty cycle
+//                  };
+//              Timer_A_outputPWM(TIMER_A2_BASE, &pwmBuzzerParam1);
+//              pwmExplosionCounter = 0;
+//              /* Clear the aliens previous position */
+//              alienRect.xMax = aliens[j][x] + 2;
+//              alienRect.xMin = aliens[j][x] - 2;
+//              alienRect.yMax = aliens[j][y] + 2;
+//              alienRect.yMin = aliens[j][y] - 2;
+//              Graphics_fillRectangleOnDisplay(g_sContext.display, &alienRect,
+//                                              g_sContext.background);
+//              /* Kill the alien */
+//              aliens[j][x] = 200;
+//              aliens[j][y] = 200;
+//
+//              /* Clear the bullet */
+//              /* Clear the bullets position */
+//              bulletsRect.xMax = bullets[i][x] + 2;
+//              bulletsRect.xMin = bullets[i][x] - 2;
+//              bulletsRect.yMax = bullets[i][y] + 2;
+//              bulletsRect.yMin = bullets[i][y] - 2;
+//              Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect,
+//                                              g_sContext.background);
+//
+//              /* Set the bullet to its starting values
+//               * so it is not redrawn again
+//               */
+//              bullets[i][x] = 200;
+//              bullets[i][y] = 200;
+//              previousBullets[i][x] = bullets[i][x];
+//              previousBullets[i][y] = bullets[i][y];
+//            }
+//          }
+//        }
+//      }
+//    }
+//    break;
 //  default:
 //    break;
 //  }
