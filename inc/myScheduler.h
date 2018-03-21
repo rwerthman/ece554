@@ -2,7 +2,7 @@
 #define SCHEDULER_H_
 
 #include <stdint.h>
-#define NUM_TASKS (uint8_t)2
+#define NUM_TASKS (uint8_t)4
 
 extern uint32_t *stack_pointer[NUM_TASKS]; // Stores the stack pointer for each task
 extern int8_t currentRunningTask;

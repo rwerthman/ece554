@@ -5,13 +5,14 @@
 typedef struct semCaller
 {
   uint8_t id;
-  struct semCaller *nextSemCaller;
+  struct semCaller *next;
 } semCaller;
 
 typedef struct semType
 {
-  uint8_t value;
-  semCaller *currentSemCaller;
+  int8_t value;
+  semCaller *first;
+  semCaller *last;
 } semType;
 
 void wait(semType *sem, semCaller *c);

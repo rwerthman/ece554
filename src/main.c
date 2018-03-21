@@ -43,11 +43,11 @@ void drawBullets(void);
 uint32_t drawBulletsStack[STACK_SIZE];
 
 /* Semaphores for the graphic's context */
-semCaller drawSpacecraftGraphicsCaller = {0,0};
+semCaller drawSpacecraftGraphicsCaller = {4,0};
 semCaller drawAliensGraphicsCaller ={1,0};
 semCaller drawExplosionsGraphicsCaller ={2,0};
 semCaller drawBulletsGraphicsCaller = {3,0};
-semType graphicsSemaphore ={1,0};
+semType graphicsSemaphore ={1,0,0};
 
 /* Graphics objects */
 Graphics_Context g_sContext;
@@ -106,8 +106,8 @@ void main(void)
 
   addTaskToScheduler(drawSpacecraft, &drawSpacecraftStack[STACK_SIZE - 1]);
   addTaskToScheduler(drawAliens, &drawAliensStack[STACK_SIZE - 1]);
-  //addTaskToScheduler(drawExplosions, &drawExplosionsStack[STACK_SIZE - 1]);
-  //addTaskToScheduler(drawBullets, &drawBulletsStack[STACK_SIZE - 1]);
+  addTaskToScheduler(drawExplosions, &drawExplosionsStack[STACK_SIZE - 1]);
+  addTaskToScheduler(drawBullets, &drawBulletsStack[STACK_SIZE - 1]);
 
   startScheduler();
 
@@ -239,7 +239,9 @@ void drawBullets(void)
             bulletsRect.yMax = bullets[i][y] + 2;
             bulletsRect.yMin = bullets[i][y] - 2;
             wait(&graphicsSemaphore, &drawBulletsGraphicsCaller);
+            Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_BLACK);
             Graphics_fillRectangle(&g_sContext, &bulletsRect);
+            Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_GREEN);
             signal(&graphicsSemaphore, &drawBulletsGraphicsCaller);
             /* Check if any of the aliens have been hit
              * by the bullet
@@ -282,8 +284,10 @@ void drawBullets(void)
                 bulletsRect.xMin = bullets[i][x] - 2;
                 bulletsRect.yMax = bullets[i][y] + 2;
                 bulletsRect.yMin = bullets[i][y] - 2;
+                Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_BLACK);
                 Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect,
                                                 g_sContext.background);
+                Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_GREEN);
                 signal(&graphicsSemaphore, &drawBulletsGraphicsCaller);
 
                 /* Set the bullet to its starting values
@@ -442,7 +446,10 @@ void drawAliens(void)
           }
           else
           {
-            // This shouldn't be reached.
+            /* This shouldn't be reached.
+             * There shouldn't be any other way for the alien
+             * to move.
+             */
             while (1);
           }
           /* Draw the alien at its new position */
