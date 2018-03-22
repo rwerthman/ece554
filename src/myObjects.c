@@ -7,6 +7,7 @@ uint8_t pwmExplosionCounter = 4;
 /* Spacecraft globals */
 uint32_t spacecraftPosition[2];
 uint32_t previousSpacecraftPosition[2];
+uint8_t spacecraftIsDestroyed = 0;
 
 /* Bullet globals */
 uint16_t bullets[NUM_BULLETS][2];
@@ -21,11 +22,12 @@ uint16_t aliens[NUM_ALIENS][2];
 uint16_t previousAliens[NUM_ALIENS][2];
 
 /* Explosion globals */
-uint16_t explosions[NUM_ALIENS][5];
+uint16_t explosions[NUM_EXPLOSIONS][5];
 
 /* Bomb globals */
 uint16_t bombs[NUM_BOMBS][2];
 uint16_t previousbombs[NUM_BOMBS][2];
+uint8_t currentBomb = 0;
 
 void initObjects(void)
 {

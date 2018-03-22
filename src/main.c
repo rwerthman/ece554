@@ -45,6 +45,8 @@ uint32_t drawExplosionsStack[STACK_SIZE];
 void drawBullets(void);
 uint32_t drawBulletsStack[STACK_SIZE];
 
+uint8_t bombTimerCounter = 0;
+
 /* Semaphores for the graphic's context */
 semCaller drawSpacecraftGraphicsCaller = {4,0};
 semCaller drawAliensGraphicsCaller ={1,0};
@@ -482,9 +484,33 @@ void drawBombs(void)
   uint8_t i;
   while (1)
    {
-     if (Timer_A_getCaptureCompareInterruptStatus(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2, TIMER_A_CAPTURECOMPARE_INTERRUPT_FLAG))
+     /* If we have counted up to 1 second draw a bomb
+      * What we want to do is initialize a bomb every second
+      */
+     if (bombTimerCounter > 8)
+     {
+       bombTimerCounter = 0;
+       if (bombs[currentBomb][x] == 200 && bombs[currentBomb][y] == 200)
+       {
+         /* If we haven't shot the bombs, shoot the bombs from the aliens position */
+         bombs[currentBomb][x] = aliens[currentBomb % 3][x];
+         bombs[currentBomb][y] = aliens[currentBomb % 3][y];
+       }
+
+       /* Go to the next bomb */
+       if (currentBomb < (NUM_BOMBS - 1))
+       {
+         currentBomb++;
+       }
+       else
+       {
+         currentBomb = 0;
+       }
+     }
+     else if (Timer_A_getCaptureCompareInterruptStatus(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2, TIMER_A_CAPTURECOMPARE_INTERRUPT_FLAG))
      {
        Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2);
+       bombTimerCounter++;
        for (i = 0; i < NUM_BOMBS; i++)
        {
          /* Draw the bombs if they aren't equal to their default values */
@@ -502,9 +528,8 @@ void drawBombs(void)
            Graphics_fillRectangleOnDisplay(g_sContext.display, &bombRect,
                                            g_sContext.background);
            /* Advance the bomb down the screen */
-           bombs[i][y]++;
+           bombs[i][y] += 3;
            /* Draw the bomb at the new position */
-           /* Draw the alien at its new position */
            bombRect.xMax = bombs[i][x] + 2;
            bombRect.xMin = bombs[i][x] - 2;
            bombRect.yMax = bombs[i][y] + 2;
@@ -522,20 +547,67 @@ void drawBombs(void)
             bombRect.xMin = bombs[i][x] - 2;
             bombRect.yMax = bombs[i][y] + 2;
             bombRect.yMin = bombs[i][y] - 2;
+            wait(&graphicsSemaphore, &drawBombsGraphicsCaller);
             Graphics_fillRectangleOnDisplay(g_sContext.display, &bombRect,
                                             g_sContext.background);
+            signal(&graphicsSemaphore, &drawBombsGraphicsCaller);
              /* Reset the bombs */
              bombs[i][x] = 200;
              bombs[i][y] = 200;
            }
          }
-         else
-         {
-           /* If we haven't shot the bombs each alien gets two bombs */
-           /* Shoot the two bombs from the aliens position */
-           bombs[i][x] = aliens[i % 3][x];
-           bombs[i][y] = aliens[i % 3][y];
-         }
+          /* Check if the bombs and the spaceship collide */
+          bombRect.xMax = bombs[i][x] + 2;
+          bombRect.xMin = bombs[i][x] - 2;
+          bombRect.yMax = bombs[i][y] + 2;
+          bombRect.yMin = bombs[i][y] - 2;
+
+          spacecraftRect.xMax = spacecraftPosition[x] + 2;
+          spacecraftRect.xMin = spacecraftPosition[x] - 2;
+          spacecraftRect.yMax = spacecraftPosition[y] + 2;
+          spacecraftRect.yMin = spacecraftPosition[y] - 2;
+          if (Graphics_isRectangleOverlap(&bombRect, &spacecraftRect))
+          {
+            /* Draw an explosion at the spacecraft and bomb  */
+            explosions[3][x] = spacecraftPosition[x];
+            explosions[3][y] = spacecraftPosition[y];
+            explosions[3][r] = 5;
+            explosions[3][s] = 1;
+            explosions[3][d] = 1;
+            /* Generate PWM for the buzzer to make a sound of an explosion */
+            Timer_A_outputPWM(TIMER_A2_BASE, &explosionPWM);
+            pwmExplosionCounter = 0;
+            /* Clear the spacecrafts previous position */
+            spacecraftRect.xMax = spacecraftPosition[x] + 2;
+            spacecraftRect.xMin = spacecraftPosition[x] - 2;
+            spacecraftRect.yMax = spacecraftPosition[y] + 2;
+            spacecraftRect.yMin = spacecraftPosition[y] - 2;
+            wait(&graphicsSemaphore, &drawBombsGraphicsCaller);
+            Graphics_fillRectangleOnDisplay(g_sContext.display, &spacecraftRect,
+                                            g_sContext.background);
+
+            /* Stop drawing the spacecraft */
+            spacecraftIsDestroyed = 1;
+            spacecraftPosition[x] = 300;
+            spacecraftPosition[y] = 300;
+            previousSpacecraftPosition[x] = spacecraftPosition[x];
+            previousSpacecraftPosition[y] = spacecraftPosition[y];
+
+            /* Erase the bombs position */
+           bombRect.xMax = bombs[i][x] + 2;
+           bombRect.xMin = bombs[i][x] - 2;
+           bombRect.yMax = bombs[i][y] + 2;
+           bombRect.yMin = bombs[i][y] - 2;
+           Graphics_fillRectangleOnDisplay(g_sContext.display, &bombRect,
+                                           g_sContext.background);
+           signal(&graphicsSemaphore, &drawBombsGraphicsCaller);
+            /* Reset the bombs */
+            bombs[i][x] = 200;
+            bombs[i][y] = 200;
+            /* Store the bombs position */
+            previousbombs[i][x] = bombs[i][x];
+            previousbombs[i][y] = bombs[i][y];
+          }
        }
      }
    }
@@ -547,37 +619,40 @@ void drawSpacecraft(void)
   {
     if (ADC12_A_getInterruptStatus(ADC12_A_BASE, ADC12_A_IFG1))
     {
-      /* Store the spacecrafts previous position */
-      previousSpacecraftPosition[x] = spacecraftPosition[x];
-      previousSpacecraftPosition[y] = spacecraftPosition[y];
-      /* Store the spacecrafts new position */
-      spacecraftPosition[x] = mapValToRange(
-          (uint32_t) ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_0), 0UL,
-          255UL, 0UL, 127UL);
-      /* Invert the y values so when the joystick goes up y goes down */
-      spacecraftPosition[y] = 0x7F
-          & ~mapValToRange(
-              (uint32_t) ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_1),
-              0UL, 255UL, 0UL, 127UL);
-      /* If the spacecraft is in a new position clear its old position and redraw it */
-      if (previousSpacecraftPosition[x] != spacecraftPosition[x]
-          || previousSpacecraftPosition[y] != spacecraftPosition[y])
+      if (!spacecraftIsDestroyed)
       {
-        wait(&graphicsSemaphore, &drawSpacecraftGraphicsCaller);
-        /* Clear the spacecrafts previous position */
-        spacecraftRect.xMax = previousSpacecraftPosition[x] + 2;
-        spacecraftRect.xMin = previousSpacecraftPosition[x] - 2;
-        spacecraftRect.yMax = previousSpacecraftPosition[y] + 2;
-        spacecraftRect.yMin = previousSpacecraftPosition[y] - 2;
-        Graphics_fillRectangleOnDisplay(g_sContext.display, &spacecraftRect,
-                                        g_sContext.background);
-        /* Draw it's new position */
-        spacecraftRect.xMax = spacecraftPosition[x] + 2;
-        spacecraftRect.xMin = spacecraftPosition[x] - 2;
-        spacecraftRect.yMax = spacecraftPosition[y] + 2;
-        spacecraftRect.yMin = spacecraftPosition[y] - 2;
-        Graphics_fillRectangle(&g_sContext, &spacecraftRect);
-        signal(&graphicsSemaphore, &drawSpacecraftGraphicsCaller);
+        /* Store the spacecrafts previous position */
+        previousSpacecraftPosition[x] = spacecraftPosition[x];
+        previousSpacecraftPosition[y] = spacecraftPosition[y];
+        /* Store the spacecrafts new position */
+        spacecraftPosition[x] = mapValToRange(
+            (uint32_t) ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_0), 0UL,
+            255UL, 0UL, 127UL);
+        /* Invert the y values so when the joystick goes up y goes down */
+        spacecraftPosition[y] = 0x7F
+            & ~mapValToRange(
+                (uint32_t) ADC12_A_getResults(ADC12_A_BASE, ADC12_A_MEMORY_1),
+                0UL, 255UL, 0UL, 127UL);
+        /* If the spacecraft is in a new position clear its old position and redraw it */
+        if (previousSpacecraftPosition[x] != spacecraftPosition[x]
+            || previousSpacecraftPosition[y] != spacecraftPosition[y])
+        {
+          wait(&graphicsSemaphore, &drawSpacecraftGraphicsCaller);
+          /* Clear the spacecrafts previous position */
+          spacecraftRect.xMax = previousSpacecraftPosition[x] + 2;
+          spacecraftRect.xMin = previousSpacecraftPosition[x] - 2;
+          spacecraftRect.yMax = previousSpacecraftPosition[y] + 2;
+          spacecraftRect.yMin = previousSpacecraftPosition[y] - 2;
+          Graphics_fillRectangleOnDisplay(g_sContext.display, &spacecraftRect,
+                                          g_sContext.background);
+          /* Draw it's new position */
+          spacecraftRect.xMax = spacecraftPosition[x] + 2;
+          spacecraftRect.xMin = spacecraftPosition[x] - 2;
+          spacecraftRect.yMax = spacecraftPosition[y] + 2;
+          spacecraftRect.yMin = spacecraftPosition[y] - 2;
+          Graphics_fillRectangle(&g_sContext, &spacecraftRect);
+          signal(&graphicsSemaphore, &drawSpacecraftGraphicsCaller);
+        }
       }
     }
   }

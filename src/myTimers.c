@@ -73,29 +73,15 @@ void initTimers(void)
     Timer_A_initCompareMode(TIMER_A1_BASE, &compareParamA1_1);
     Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_1);
 
-    /* Debouce fire button timer */
+    /* Alien bomb timer */
     Timer_A_initCompareModeParam compareParamA1_2 =
     {
       TIMER_A_CAPTURECOMPARE_REGISTER_2,
       TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
       TIMER_A_OUTPUTMODE_SET_RESET,
-      2*320, // 20 milliseconds
+      10*320, // 100 milliseconds
     };
     Timer_A_initCompareMode(TIMER_A1_BASE, &compareParamA1_2);
     Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2);
-//
-//    Timer_A_initCompareModeParam compareParam1A1 =
-//       {
-//        TIMER_A_CAPTURECOMPARE_REGISTER_1,
-//        TIMER_A_CAPTURECOMPARE_INTERRUPT_ENABLE,
-//        TIMER_A_OUTPUTMODE_SET_RESET,
-//        6400, // Counted up to in 200 milliseconds (.2 second) with a 32 KHz clock
-//       };
-//
-//    Timer_A_initCompareMode(TIMER_A1_BASE, &compareParam1A1);
-//    Timer_A_clearTimerInterrupt(TIMER_A1_BASE);
-//    Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE,
-//                                        TIMER_A_CAPTURECOMPARE_REGISTER_0 +
-//                                        TIMER_A_CAPTURECOMPARE_REGISTER_1);
 }
 

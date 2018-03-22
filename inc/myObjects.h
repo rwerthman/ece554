@@ -4,13 +4,14 @@
 #include <stdint.h>
 
 #define NUM_ALIENS (uint8_t)3
-#define NUM_EXPLOSIONS (uint8_t)3
+#define NUM_EXPLOSIONS (uint8_t)4
 #define NUM_BULLETS (uint8_t)10
 #define NUM_BOMBS (uint8_t)6
 
 /* Spacecraft globals */
 extern uint32_t spacecraftPosition[2];
 extern uint32_t previousSpacecraftPosition[2];
+extern uint8_t spacecraftIsDestroyed;
 
 /* Bullet globals */
 extern uint16_t bullets[NUM_BULLETS][2];
@@ -28,6 +29,7 @@ extern uint16_t previousAliens[NUM_ALIENS][2];
 /* Bombs globals */
 extern uint16_t bombs[NUM_BOMBS][2];
 extern uint16_t previousbombs[NUM_BOMBS][2];
+extern uint8_t currentBomb;
 
 /* Explosion globals */
 enum
@@ -38,7 +40,7 @@ enum
   r = 3, // Radius
   d = 4  // Direction
 };
-extern uint16_t explosions[NUM_ALIENS][5];
+extern uint16_t explosions[NUM_EXPLOSIONS][5];
 
 /* Sound globals */
 extern uint8_t pwmFireCounter;
