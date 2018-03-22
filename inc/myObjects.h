@@ -6,6 +6,7 @@
 #define NUM_ALIENS (uint8_t)3
 #define NUM_EXPLOSIONS (uint8_t)3
 #define NUM_BULLETS (uint8_t)10
+#define NUM_BOMBS (uint8_t)6
 
 /* Spacecraft globals */
 extern uint32_t spacecraftPosition[2];
@@ -23,6 +24,10 @@ extern uint8_t previousFireButtonState;
 /* Aliens globals */
 extern uint16_t aliens[NUM_ALIENS][2];
 extern uint16_t previousAliens[NUM_ALIENS][2];
+
+/* Bombs globals */
+extern uint16_t bombs[NUM_BOMBS][2];
+extern uint16_t previousbombs[NUM_BOMBS][2];
 
 /* Explosion globals */
 enum

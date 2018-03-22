@@ -72,6 +72,17 @@ void initTimers(void)
         };
     Timer_A_initCompareMode(TIMER_A1_BASE, &compareParamA1_1);
     Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_1);
+
+    /* Debouce fire button timer */
+    Timer_A_initCompareModeParam compareParamA1_2 =
+    {
+      TIMER_A_CAPTURECOMPARE_REGISTER_2,
+      TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
+      TIMER_A_OUTPUTMODE_SET_RESET,
+      2*320, // 20 milliseconds
+    };
+    Timer_A_initCompareMode(TIMER_A1_BASE, &compareParamA1_2);
+    Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2);
 //
 //    Timer_A_initCompareModeParam compareParam1A1 =
 //       {

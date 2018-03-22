@@ -23,6 +23,10 @@ uint16_t previousAliens[NUM_ALIENS][2];
 /* Explosion globals */
 uint16_t explosions[NUM_ALIENS][5];
 
+/* Bomb globals */
+uint16_t bombs[NUM_BOMBS][2];
+uint16_t previousbombs[NUM_BOMBS][2];
+
 void initObjects(void)
 {
   uint8_t i;
@@ -41,6 +45,14 @@ void initObjects(void)
     aliens[i][y] = 10 + 15 * i;
     previousAliens[i][x] = aliens[i][x];
     previousAliens[i][y] = aliens[i][y];
+  }
+
+  for (i = 0; i < NUM_BOMBS; i++)
+  {
+    bombs[i][x] = 200;
+    bombs[i][y] = 200;
+    previousbombs[i][x] = bombs[i][x];
+    previousbombs[i][y] = bombs[i][y];
   }
 
   for (i = 0; i < NUM_EXPLOSIONS; i++)

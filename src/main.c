@@ -36,6 +36,9 @@ uint32_t drawSpacecraftStack[STACK_SIZE];
 void drawAliens(void);
 uint32_t drawAliensStack[STACK_SIZE];
 
+void drawBombs(void);
+uint32_t drawBombsStack[STACK_SIZE];
+
 void drawExplosions(void);
 uint32_t drawExplosionsStack[STACK_SIZE];
 
@@ -47,6 +50,7 @@ semCaller drawSpacecraftGraphicsCaller = {4,0};
 semCaller drawAliensGraphicsCaller ={1,0};
 semCaller drawExplosionsGraphicsCaller ={2,0};
 semCaller drawBulletsGraphicsCaller = {3,0};
+semCaller drawBombsGraphicsCaller = {5,0};
 semType graphicsSemaphore ={1,0,0};
 
 /* Graphics objects */
@@ -55,6 +59,8 @@ Graphics_Rectangle spacecraftRect;
 Graphics_Rectangle bulletsRect;
 Graphics_Rectangle explosionRect;
 Graphics_Rectangle alienRect;
+Graphics_Rectangle bombRect;
+
 
 Timer_A_outputPWMParam shootingPWM =
 {
@@ -106,8 +112,9 @@ void main(void)
 
   addTaskToScheduler(drawSpacecraft, &drawSpacecraftStack[STACK_SIZE - 1]);
   addTaskToScheduler(drawAliens, &drawAliensStack[STACK_SIZE - 1]);
-  addTaskToScheduler(drawExplosions, &drawExplosionsStack[STACK_SIZE - 1]);
+  addTaskToScheduler(drawBombs, &drawBombsStack[STACK_SIZE - 1]);
   addTaskToScheduler(drawBullets, &drawBulletsStack[STACK_SIZE - 1]);
+  addTaskToScheduler(drawExplosions, &drawExplosionsStack[STACK_SIZE - 1]);
 
   startScheduler();
 
@@ -131,72 +138,71 @@ void drawBullets(void)
     {
       Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_1);
       /* Read the "shoot" button input */
-      currentFireButtonState = GPIO_getInputPinValue(GPIO_PORT_P3, GPIO_PIN7);
-      /* Debounce the button until next interrupt (50 milliseconds)
-       * so wait another 50 milliseconds to see if the button is still low
-       */
-      if (currentFireButtonState == previousFireButtonState &&
-          currentFireButtonState == GPIO_INPUT_PIN_LOW)
-      {
-        /* If the button is low shoot a bullet */
-        /* First store the bullets starting position */
-        previousBullets[currentBullet][x] = bullets[currentBullet][x];
-        previousBullets[currentBullet][y] = bullets[currentBullet][y];
-        /* Set the bullet to the position of the spacecraft when
-         * it was fired.
-         */
-        bullets[currentBullet][x] = spacecraftPosition[x];
-        /* Subtract from the spacecraft position so the bullet looks like it is ahead of the
-         * spacecraft when we shoot it and also we don't
-         * clear the spacecraft when we clear the bullet
-         */
-        bullets[currentBullet][y] = spacecraftPosition[y] - 5;
-        /* Advance to the next bullet or back to 0 if there isn't
-         * another bullet
-         */
-        if (currentBullet < NUM_BULLETS)
-        {
-          currentBullet++;
-        }
-        else
-        {
-          currentBullet = 0;
-        }
-        /* Reset previous button state to be ready for the next button press */
-        previousFireButtonState = GPIO_INPUT_PIN_HIGH;
-        /* Generate PWM for the buzzer when shooting */
-        Timer_A_outputPWM(TIMER_A2_BASE, &shootingPWM);
-        pwmFireCounter = 0;
-      }
-      else
-      {
-        previousFireButtonState = currentFireButtonState;
-        /* Let the pwm signal for the shot run for at least 3 context switches */
-        if (pwmFireCounter < 3)
-        {
-          pwmFireCounter += 1;
-        }
-        else if (pwmFireCounter == 3)
-        {
-          Timer_A_stop(TIMER_A2_BASE);
-          pwmFireCounter = 4;
-        }
+           currentFireButtonState = GPIO_getInputPinValue(GPIO_PORT_P3, GPIO_PIN7);
+           /* Debounce the button until next interrupt (50 milliseconds)
+            * so wait another 50 milliseconds to see if the button is still low
+            */
+           if (currentFireButtonState == previousFireButtonState &&
+               currentFireButtonState == GPIO_INPUT_PIN_LOW)
+           {
+             /* If the button is low shoot a bullet */
+             /* First store the bullets starting position */
+             previousBullets[currentBullet][x] = bullets[currentBullet][x];
+             previousBullets[currentBullet][y] = bullets[currentBullet][y];
+             /* Set the bullet to the position of the spacecraft when
+              * it was fired.
+              */
+             bullets[currentBullet][x] = spacecraftPosition[x];
+             /* Subtract from the spacecraft position so the bullet looks like it is ahead of the
+              * spacecraft when we shoot it and also we don't
+              * clear the spacecraft when we clear the bullet
+              */
+             bullets[currentBullet][y] = spacecraftPosition[y] - 5;
+             /* Advance to the next bullet or back to 0 if there isn't
+              * another bullet
+              */
+             if (currentBullet < NUM_BULLETS)
+             {
+               currentBullet++;
+             }
+             else
+             {
+               currentBullet = 0;
+             }
+             /* Reset previous button state to be ready for the next button press */
+             previousFireButtonState = GPIO_INPUT_PIN_HIGH;
+             /* Generate PWM for the buzzer when shooting */
+             Timer_A_outputPWM(TIMER_A2_BASE, &shootingPWM);
+             pwmFireCounter = 0;
+           }
+           else
+           {
+             previousFireButtonState = currentFireButtonState;
+             /* Let the pwm signal for the shot run for at least 3 context switches */
+             if (pwmFireCounter < 3)
+             {
+               pwmFireCounter += 1;
+             }
+             else if (pwmFireCounter == 3)
+             {
+               Timer_A_stop(TIMER_A2_BASE);
+               pwmFireCounter = 4;
+             }
 
-        /* If we aren't shooting and we can make the explosion noise */
-        if (pwmExplosionCounter < 3 && pwmFireCounter == 4)
-        {
-          pwmExplosionCounter += 1;
-        }
-        /* If we aren't shooting and we are done with the explosion noises
-         * turn of the PWM for the explosions
-         * */
-        else if (pwmFireCounter == 4 && pwmExplosionCounter == 3)
-        {
-          Timer_A_stop(TIMER_A2_BASE);
-          pwmExplosionCounter = 4;
-        }
-      }
-
+             /* If we aren't shooting and we can make the explosion noise */
+             if (pwmExplosionCounter < 3 && pwmFireCounter == 4)
+             {
+               pwmExplosionCounter += 1;
+             }
+             /* If we aren't shooting and we are done with the explosion noises
+              * turn of the PWM for the explosions
+              * */
+             else if (pwmFireCounter == 4 && pwmExplosionCounter == 3)
+             {
+               Timer_A_stop(TIMER_A2_BASE);
+               pwmExplosionCounter = 4;
+             }
+           }
       /* Advance all of the bullets by clearing their previous positions
        * and drawing them at their new positions
        */
@@ -469,6 +475,70 @@ void drawAliens(void)
       }
     }
   }
+}
+
+void drawBombs(void)
+{
+  uint8_t i;
+  while (1)
+   {
+     if (Timer_A_getCaptureCompareInterruptStatus(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2, TIMER_A_CAPTURECOMPARE_INTERRUPT_FLAG))
+     {
+       Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2);
+       for (i = 0; i < NUM_BOMBS; i++)
+       {
+         /* Draw the bombs if they aren't equal to their default values */
+         if (bombs[i][x] != 200 && bombs[i][y] != 200)
+         {
+           wait(&graphicsSemaphore, &drawBombsGraphicsCaller);
+           /* Store the bombs position */
+           previousbombs[i][x] = bombs[i][x];
+           previousbombs[i][y] = bombs[i][y];
+           /* Erase the bombs position */
+           bombRect.xMax = bombs[i][x] + 2;
+           bombRect.xMin = bombs[i][x] - 2;
+           bombRect.yMax = bombs[i][y] + 2;
+           bombRect.yMin = bombs[i][y] - 2;
+           Graphics_fillRectangleOnDisplay(g_sContext.display, &bombRect,
+                                           g_sContext.background);
+           /* Advance the bomb down the screen */
+           bombs[i][y]++;
+           /* Draw the bomb at the new position */
+           /* Draw the alien at its new position */
+           bombRect.xMax = bombs[i][x] + 2;
+           bombRect.xMin = bombs[i][x] - 2;
+           bombRect.yMax = bombs[i][y] + 2;
+           bombRect.yMin = bombs[i][y] - 2;
+           Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_BROWN);
+           Graphics_fillRectangle(&g_sContext, &bombRect);
+           Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_GREEN);
+           signal(&graphicsSemaphore, &drawBombsGraphicsCaller);
+
+           /* Check if bombs are off screen */
+           if (bombs[i][y] > 127)
+           {
+             /* Erase the bombs position */
+            bombRect.xMax = bombs[i][x] + 2;
+            bombRect.xMin = bombs[i][x] - 2;
+            bombRect.yMax = bombs[i][y] + 2;
+            bombRect.yMin = bombs[i][y] - 2;
+            Graphics_fillRectangleOnDisplay(g_sContext.display, &bombRect,
+                                            g_sContext.background);
+             /* Reset the bombs */
+             bombs[i][x] = 200;
+             bombs[i][y] = 200;
+           }
+         }
+         else
+         {
+           /* If we haven't shot the bombs each alien gets two bombs */
+           /* Shoot the two bombs from the aliens position */
+           bombs[i][x] = aliens[i % 3][x];
+           bombs[i][y] = aliens[i % 3][y];
+         }
+       }
+     }
+   }
 }
 
 void drawSpacecraft(void)
