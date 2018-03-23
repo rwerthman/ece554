@@ -1,13 +1,9 @@
 /**
  * TODO:
- * 1. Buffering for ADC input so all of the input will be drawn?
- * 2. Semaphores or mailboxes for shared resources between tasks
- * 3. Pull out scheduler into separate header and c file --- DONE ---
- * 4. Slow down the drawing of the explosions
- * 5. Fix problem with semaphores signaling when they shouldn't from different tasks
+ * 1. Detect intersection of bullets and bombs
+ * 2. Change difficulty by adding more bombs
+ * 3. Draw difficulty on screen
  *
- * High pitch = small period
- * Low pitch = high period
  */
 
 #include <msp430.h>
@@ -44,8 +40,6 @@ uint32_t drawExplosionsStack[STACK_SIZE];
 
 void drawBullets(void);
 uint32_t drawBulletsStack[STACK_SIZE];
-
-uint8_t bombTimerCounter = 0;
 
 /* Semaphores for the graphic's context */
 semCaller drawSpacecraftGraphicsCaller = {4,0};
@@ -140,71 +134,71 @@ void drawBullets(void)
     {
       Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_1);
       /* Read the "shoot" button input */
-           currentFireButtonState = GPIO_getInputPinValue(GPIO_PORT_P3, GPIO_PIN7);
-           /* Debounce the button until next interrupt (50 milliseconds)
-            * so wait another 50 milliseconds to see if the button is still low
-            */
-           if (currentFireButtonState == previousFireButtonState &&
-               currentFireButtonState == GPIO_INPUT_PIN_LOW)
-           {
-             /* If the button is low shoot a bullet */
-             /* First store the bullets starting position */
-             previousBullets[currentBullet][x] = bullets[currentBullet][x];
-             previousBullets[currentBullet][y] = bullets[currentBullet][y];
-             /* Set the bullet to the position of the spacecraft when
-              * it was fired.
-              */
-             bullets[currentBullet][x] = spacecraftPosition[x];
-             /* Subtract from the spacecraft position so the bullet looks like it is ahead of the
-              * spacecraft when we shoot it and also we don't
-              * clear the spacecraft when we clear the bullet
-              */
-             bullets[currentBullet][y] = spacecraftPosition[y] - 5;
-             /* Advance to the next bullet or back to 0 if there isn't
-              * another bullet
-              */
-             if (currentBullet < NUM_BULLETS)
-             {
-               currentBullet++;
-             }
-             else
-             {
-               currentBullet = 0;
-             }
-             /* Reset previous button state to be ready for the next button press */
-             previousFireButtonState = GPIO_INPUT_PIN_HIGH;
-             /* Generate PWM for the buzzer when shooting */
-             Timer_A_outputPWM(TIMER_A2_BASE, &shootingPWM);
-             pwmFireCounter = 0;
-           }
-           else
-           {
-             previousFireButtonState = currentFireButtonState;
-             /* Let the pwm signal for the shot run for at least 3 context switches */
-             if (pwmFireCounter < 3)
-             {
-               pwmFireCounter += 1;
-             }
-             else if (pwmFireCounter == 3)
-             {
-               Timer_A_stop(TIMER_A2_BASE);
-               pwmFireCounter = 4;
-             }
+      currentFireButtonState = GPIO_getInputPinValue(GPIO_PORT_P3, GPIO_PIN7);
+      /* Debounce the button until next interrupt (50 milliseconds)
+       * so wait another 50 milliseconds to see if the button is still low
+       */
+      if (currentFireButtonState == previousFireButtonState &&
+         currentFireButtonState == GPIO_INPUT_PIN_LOW)
+      {
+         /* If the button is low shoot a bullet */
+         /* First store the bullets starting position */
+         previousBullets[currentBullet][x] = bullets[currentBullet][x];
+         previousBullets[currentBullet][y] = bullets[currentBullet][y];
+         /* Set the bullet to the position of the spacecraft when
+          * it was fired.
+          */
+         bullets[currentBullet][x] = spacecraftPosition[x];
+         /* Subtract from the spacecraft position so the bullet looks like it is ahead of the
+          * spacecraft when we shoot it and also we don't
+          * clear the spacecraft when we clear the bullet
+          */
+         bullets[currentBullet][y] = spacecraftPosition[y] - 5;
+         /* Advance to the next bullet or back to 0 if there isn't
+          * another bullet
+          */
+         if (currentBullet < NUM_BULLETS)
+         {
+           currentBullet++;
+         }
+         else
+         {
+           currentBullet = 0;
+         }
+         /* Reset previous button state to be ready for the next button press */
+         previousFireButtonState = GPIO_INPUT_PIN_HIGH;
+         /* Generate PWM for the buzzer when shooting */
+         Timer_A_outputPWM(TIMER_A2_BASE, &shootingPWM);
+         pwmFireCounter = 0;
+      }
+      else
+      {
+         previousFireButtonState = currentFireButtonState;
+         /* Let the pwm signal for the shot run for at least 3 context switches */
+         if (pwmFireCounter < 3)
+         {
+           pwmFireCounter++;
+         }
+         else if (pwmFireCounter == 3)
+         {
+           Timer_A_stop(TIMER_A2_BASE);
+           pwmFireCounter = 4;
+         }
 
-             /* If we aren't shooting and we can make the explosion noise */
-             if (pwmExplosionCounter < 3 && pwmFireCounter == 4)
-             {
-               pwmExplosionCounter += 1;
-             }
-             /* If we aren't shooting and we are done with the explosion noises
-              * turn of the PWM for the explosions
-              * */
-             else if (pwmFireCounter == 4 && pwmExplosionCounter == 3)
-             {
-               Timer_A_stop(TIMER_A2_BASE);
-               pwmExplosionCounter = 4;
-             }
-           }
+         /* If we aren't shooting and we can make the explosion noise */
+         if (pwmExplosionCounter < 3 && pwmFireCounter == 4)
+         {
+           pwmExplosionCounter++;
+         }
+         /* If we aren't shooting and we are done with the explosion noises
+          * turn of the PWM for the explosions
+          * */
+         else if (pwmFireCounter == 4 && pwmExplosionCounter == 3)
+         {
+           Timer_A_stop(TIMER_A2_BASE);
+           pwmExplosionCounter = 4;
+         }
+      }
       /* Advance all of the bullets by clearing their previous positions
        * and drawing them at their new positions
        */
@@ -216,15 +210,14 @@ void drawBullets(void)
          */
         if (bullets[i][x] != 200 && bullets[i][y] != 200)
         {
+          wait(&graphicsSemaphore, &drawBulletsGraphicsCaller);
           /* Clear the bullets previous position */
           bulletsRect.xMax = previousBullets[i][x] + 2;
           bulletsRect.xMin = previousBullets[i][x] - 2;
           bulletsRect.yMax = previousBullets[i][y] + 2;
           bulletsRect.yMin = previousBullets[i][y] - 2;
-          wait(&graphicsSemaphore, &drawBulletsGraphicsCaller);
           Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect,
                                           g_sContext.background);
-          signal(&graphicsSemaphore, &drawBulletsGraphicsCaller);
           /* If the bullet has moved off the screen reset
            * it.
            */
@@ -236,23 +229,23 @@ void drawBullets(void)
           }
           else
           {
-            /* Store the bullets position before moving to the next one */
+            /* Store the bullets position before moving the bullet
+             * to a new position */
             previousBullets[i][x] = bullets[i][x];
             previousBullets[i][y] = bullets[i][y];
-            /* Show the bullets moving up to the top of the screen */
+            /* Move the bullet up towards the top of the screen */
             bullets[i][y]--;
 
+            /* Redraw the bullet at its new position */
             bulletsRect.xMax = bullets[i][x] + 2;
             bulletsRect.xMin = bullets[i][x] - 2;
             bulletsRect.yMax = bullets[i][y] + 2;
             bulletsRect.yMin = bullets[i][y] - 2;
-            wait(&graphicsSemaphore, &drawBulletsGraphicsCaller);
             Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_BLACK);
             Graphics_fillRectangle(&g_sContext, &bulletsRect);
             Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_GREEN);
-            signal(&graphicsSemaphore, &drawBulletsGraphicsCaller);
             /* Check if any of the aliens have been hit
-             * by the bullet
+             * by the bullet at its new position
              */
             uint8_t j;
             for (j = 0; j < NUM_ALIENS ; j++)
@@ -274,19 +267,19 @@ void drawBullets(void)
                 /* Generate PWM for the buzzer to make a sound of an explosion */
                 Timer_A_outputPWM(TIMER_A2_BASE, &explosionPWM);
                 pwmExplosionCounter = 0;
-                /* Clear the aliens previous position */
+                /* Clear the aliens position */
                 alienRect.xMax = aliens[j][x] + 2;
                 alienRect.xMin = aliens[j][x] - 2;
                 alienRect.yMax = aliens[j][y] + 2;
                 alienRect.yMin = aliens[j][y] - 2;
-                wait(&graphicsSemaphore, &drawBulletsGraphicsCaller);
                 Graphics_fillRectangleOnDisplay(g_sContext.display, &alienRect,
                                                 g_sContext.background);
-                /* Kill the alien */
+                /* Reset the alien */
                 aliens[j][x] = 200;
                 aliens[j][y] = 200;
+                previousAliens[j][x] = 200;
+                previousAliens[j][y] = 200;
 
-                /* Clear the bullet */
                 /* Clear the bullets position */
                 bulletsRect.xMax = bullets[i][x] + 2;
                 bulletsRect.xMin = bullets[i][x] - 2;
@@ -296,11 +289,8 @@ void drawBullets(void)
                 Graphics_fillRectangleOnDisplay(g_sContext.display, &bulletsRect,
                                                 g_sContext.background);
                 Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_GREEN);
-                signal(&graphicsSemaphore, &drawBulletsGraphicsCaller);
 
-                /* Set the bullet to its starting values
-                 * so it is not redrawn again
-                 */
+                /* Reset the bullet */
                 bullets[i][x] = 200;
                 bullets[i][y] = 200;
                 previousBullets[i][x] = bullets[i][x];
@@ -308,6 +298,7 @@ void drawBullets(void)
               }
             }
           }
+          signal(&graphicsSemaphore, &drawBulletsGraphicsCaller);
         }
       }
     }
@@ -328,16 +319,15 @@ void drawExplosions(void)
         /* If the explosion has been set to be shown */
         if (explosions[i][s])
         {
+          wait(&graphicsSemaphore, &drawExplosionsGraphicsCaller);
           /* If the explosion is set to increase in direction */
           if (explosions[i][d] == 1)
           {
             /* Don't need to clear previous circle because the explosion gets bigger */
-            wait(&graphicsSemaphore, &drawExplosionsGraphicsCaller);
             Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_PURPLE);
             Graphics_fillCircle(&g_sContext, explosions[i][x], explosions[i][y],
                                 explosions[i][r]);
             Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_GREEN);
-            signal(&graphicsSemaphore, &drawExplosionsGraphicsCaller);
             explosions[i][r] += 5;
             /* Max explosion radius should be 10 but we have to go to 15 to draw a circle with radius 10 */
             if (explosions[i][r] >= 15)
@@ -353,12 +343,10 @@ void drawExplosions(void)
             explosionRect.xMin = explosions[i][x] - explosions[i][r];
             explosionRect.yMax = explosions[i][y] + explosions[i][r];
             explosionRect.yMin = explosions[i][y] - explosions[i][r];
-            wait(&graphicsSemaphore, &drawExplosionsGraphicsCaller);
             Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_PURPLE);
             Graphics_fillRectangleOnDisplay(g_sContext.display, &explosionRect,
                                             g_sContext.background);
             Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_GREEN);
-            signal(&graphicsSemaphore, &drawExplosionsGraphicsCaller);
             /* Decrease the explosion size */
             explosions[i][r] -= 5;
             /* Minimum explosion size is 0.  Stop the explosion
@@ -372,14 +360,13 @@ void drawExplosions(void)
             else
             {
               /* Otherwise keep drawing smaller explosions */
-              wait(&graphicsSemaphore, &drawExplosionsGraphicsCaller);
               Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_PURPLE);
               Graphics_fillCircle(&g_sContext, explosions[i][x], explosions[i][y],
                                   explosions[i][r]);
               Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_GREEN);
-              signal(&graphicsSemaphore, &drawExplosionsGraphicsCaller);
             }
           }
+          signal(&graphicsSemaphore, &drawExplosionsGraphicsCaller);
         }
       }
     }
@@ -537,25 +524,20 @@ void drawBombs(void)
            Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_BROWN);
            Graphics_fillRectangle(&g_sContext, &bombRect);
            Graphics_setForegroundColor(&g_sContext, GRAPHICS_COLOR_GREEN);
-           signal(&graphicsSemaphore, &drawBombsGraphicsCaller);
-
            /* Check if bombs are off screen */
            if (bombs[i][y] > 127)
            {
-             /* Erase the bombs position */
+            /* Erase the bombs position */
             bombRect.xMax = bombs[i][x] + 2;
             bombRect.xMin = bombs[i][x] - 2;
             bombRect.yMax = bombs[i][y] + 2;
             bombRect.yMin = bombs[i][y] - 2;
-            wait(&graphicsSemaphore, &drawBombsGraphicsCaller);
             Graphics_fillRectangleOnDisplay(g_sContext.display, &bombRect,
                                             g_sContext.background);
-            signal(&graphicsSemaphore, &drawBombsGraphicsCaller);
              /* Reset the bombs */
              bombs[i][x] = 200;
              bombs[i][y] = 200;
            }
-         }
           /* Check if the bombs and the spaceship collide */
           bombRect.xMax = bombs[i][x] + 2;
           bombRect.xMin = bombs[i][x] - 2;
@@ -582,10 +564,8 @@ void drawBombs(void)
             spacecraftRect.xMin = spacecraftPosition[x] - 2;
             spacecraftRect.yMax = spacecraftPosition[y] + 2;
             spacecraftRect.yMin = spacecraftPosition[y] - 2;
-            wait(&graphicsSemaphore, &drawBombsGraphicsCaller);
             Graphics_fillRectangleOnDisplay(g_sContext.display, &spacecraftRect,
                                             g_sContext.background);
-
             /* Stop drawing the spacecraft */
             spacecraftIsDestroyed = 1;
             spacecraftPosition[x] = 300;
@@ -600,7 +580,6 @@ void drawBombs(void)
            bombRect.yMin = bombs[i][y] - 2;
            Graphics_fillRectangleOnDisplay(g_sContext.display, &bombRect,
                                            g_sContext.background);
-           signal(&graphicsSemaphore, &drawBombsGraphicsCaller);
             /* Reset the bombs */
             bombs[i][x] = 200;
             bombs[i][y] = 200;
@@ -608,6 +587,8 @@ void drawBombs(void)
             previousbombs[i][x] = bombs[i][x];
             previousbombs[i][y] = bombs[i][y];
           }
+          signal(&graphicsSemaphore, &drawBombsGraphicsCaller);
+         }
        }
      }
    }
@@ -656,6 +637,21 @@ void drawSpacecraft(void)
       }
     }
   }
+}
+
+void detectBombBulletCollision(void)
+{
+
+}
+
+void drawDifficultyLevel(void)
+{
+
+}
+
+void setDifficultyLevel(void)
+{
+
 }
 
 #pragma vector=PORT1_VECTOR

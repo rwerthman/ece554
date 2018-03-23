@@ -25,9 +25,11 @@ uint16_t previousAliens[NUM_ALIENS][2];
 uint16_t explosions[NUM_EXPLOSIONS][5];
 
 /* Bomb globals */
-uint16_t bombs[NUM_BOMBS][2];
-uint16_t previousbombs[NUM_BOMBS][2];
+/* Allocate extra room for level difficulty changes */
+uint16_t bombs[NUM_BOMBS + 6][2];
+uint16_t previousbombs[NUM_BOMBS + 6][2];
 uint8_t currentBomb = 0;
+uint8_t bombTimerCounter = 0;
 
 void initObjects(void)
 {

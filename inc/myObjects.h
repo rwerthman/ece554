@@ -30,6 +30,7 @@ extern uint16_t previousAliens[NUM_ALIENS][2];
 extern uint16_t bombs[NUM_BOMBS][2];
 extern uint16_t previousbombs[NUM_BOMBS][2];
 extern uint8_t currentBomb;
+extern uint8_t bombTimerCounter;
 
 /* Explosion globals */
 enum
