@@ -78,6 +78,9 @@ void startScheduler(void)
 
    // Start the timer to trigger the Aliens and fire button
    Timer_A_startCounter(TIMER_A1_BASE, TIMER_A_UP_MODE);
+
+   // Start the timer to backlight, and shooting and explosion sounds
+   Timer_A_startCounter(TIMER_A2_BASE, TIMER_A_UP_MODE);
   while (1)
   {
 

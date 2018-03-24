@@ -88,5 +88,20 @@ void initTimers(void)
     };
     Timer_A_initCompareMode(TIMER_A1_BASE, &compareParamA1_2);
     Timer_A_clearCaptureCompareInterrupt(TIMER_A1_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2);
+
+    /* Backlight, shooting, and explosions timer */
+    Timer_A_initUpModeParam upConfig2 =
+    {
+            TIMER_A_CLOCKSOURCE_SMCLK,
+            TIMER_A_CLOCKSOURCE_DIVIDER_1,
+            60000,
+            TIMER_A_TAIE_INTERRUPT_DISABLE,         // Disable Timer interrupt
+            TIMER_A_CCIE_CCR0_INTERRUPT_DISABLE,    // Disable CCR0 interrupt
+            TIMER_A_DO_CLEAR                        // Clear value
+    };
+    Timer_A_initUpMode(TIMER_A2_BASE, &upConfig2);
+    Timer_A_clearCaptureCompareInterrupt(TIMER_A2_BASE,
+                                         TIMER_A_CAPTURECOMPARE_REGISTER_0 + TIMER_A_CAPTURECOMPARE_REGISTER_1 + TIMER_A_CAPTURECOMPARE_REGISTER_2);
+
 }
 

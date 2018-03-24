@@ -3,6 +3,8 @@
  * 1. Detect intersection of bullets and bombs
  * 2. Change difficulty by adding more bombs
  * 3. Draw difficulty on screen
+ * 4. Draw score (how many aliens destroyed) on screen
+ * 5. Have backlight change intensity
  *
  */
 
@@ -17,6 +19,8 @@
 #include "inc/myGPIO.h"
 #include "inc/myObjects.h"
 #include "inc/myJoystickADC.h"
+#include "inc/HAL_OPT3001.H"
+#include "inc/HAL_I2C.h"
 
 #define STACK_SIZE 64 // 64*32 = 2048 btyes
 
@@ -57,26 +61,51 @@ Graphics_Rectangle explosionRect;
 Graphics_Rectangle alienRect;
 Graphics_Rectangle bombRect;
 
-
-Timer_A_outputPWMParam shootingPWM =
+Timer_A_initCompareModeParam shootingPWM =
 {
-  TIMER_A_CLOCKSOURCE_SMCLK,
-  TIMER_A_CLOCKSOURCE_DIVIDER_1,
-  60000,
   TIMER_A_CAPTURECOMPARE_REGISTER_2,
+  TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
   TIMER_A_OUTPUTMODE_RESET_SET,
-  60000/2 // 50% duty cycle
+  60000/2
 };
 
-Timer_A_outputPWMParam explosionPWM = {
-  TIMER_A_CLOCKSOURCE_SMCLK,
-  TIMER_A_CLOCKSOURCE_DIVIDER_1,
-  6400,
+Timer_A_initCompareModeParam explosionPWM =
+{
   TIMER_A_CAPTURECOMPARE_REGISTER_2,
+  TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
   TIMER_A_OUTPUTMODE_RESET_SET,
-  6400/2 // 50% duty cycle
+  60000/4
 };
 
+Timer_A_initCompareModeParam backlightPWM =
+{
+  TIMER_A_CAPTURECOMPARE_REGISTER_1,
+  TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
+  TIMER_A_OUTPUTMODE_TOGGLE_SET,
+  60000/8
+};
+
+//Timer_A_outputPWMParam shootingPWM =
+//{
+//  TIMER_A_CLOCKSOURCE_SMCLK,
+//  TIMER_A_CLOCKSOURCE_DIVIDER_1,
+//  60000,
+//  TIMER_A_CAPTURECOMPARE_REGISTER_2,
+//  TIMER_A_OUTPUTMODE_RESET_SET,
+//  60000/2 // 50% duty cycle
+//};
+
+//Timer_A_outputPWMParam explosionPWM = {
+//  TIMER_A_CLOCKSOURCE_SMCLK,
+//  TIMER_A_CLOCKSOURCE_DIVIDER_1,
+//  6400,
+//  TIMER_A_CAPTURECOMPARE_REGISTER_2,
+//  TIMER_A_OUTPUTMODE_RESET_SET,
+//  6400/2 // 50% duty cycle
+//};
+
+/* Backlight globals */
+float lux;
 
 /**
  * main.c
@@ -106,11 +135,22 @@ void main(void)
   GrContextFontSet(&g_sContext, &g_sFontFixed6x8);
   Graphics_clearDisplay(&g_sContext);
 
+  /* Initialize I2C communication */
+  Init_I2C_GPIO();
+  I2C_init();
+
+  /* Initialize OPT3001 digital ambient light sensor */
+  OPT3001_init();
+  Timer_A_initCompareMode(TIMER_A2_BASE, &backlightPWM);
+
   addTaskToScheduler(drawSpacecraft, &drawSpacecraftStack[STACK_SIZE - 1]);
   addTaskToScheduler(drawAliens, &drawAliensStack[STACK_SIZE - 1]);
   addTaskToScheduler(drawBombs, &drawBombsStack[STACK_SIZE - 1]);
   addTaskToScheduler(drawBullets, &drawBulletsStack[STACK_SIZE - 1]);
   addTaskToScheduler(drawExplosions, &drawExplosionsStack[STACK_SIZE - 1]);
+
+  /* Obtain lux value from OPT3001 */
+  float lux = OPT3001_getLux();
 
   startScheduler();
 
@@ -124,6 +164,11 @@ uint32_t mapValToRange(uint32_t x, uint32_t input_min, uint32_t input_max,
   uint32_t val = (uint32_t) (((x - input_min) * (output_max - output_min + 1)
       / (input_max - input_min + 1)) + output_min);
   return val;
+}
+
+void drawScoreAndAdjustBacklight(void)
+{
+  lux = OPT3001_getLux();
 }
 
 void drawBullets(void)
@@ -168,7 +213,8 @@ void drawBullets(void)
          /* Reset previous button state to be ready for the next button press */
          previousFireButtonState = GPIO_INPUT_PIN_HIGH;
          /* Generate PWM for the buzzer when shooting */
-         Timer_A_outputPWM(TIMER_A2_BASE, &shootingPWM);
+         //Timer_A_outputPWM(TIMER_A2_BASE, &shootingPWM);
+         Timer_A_initCompareMode(TIMER_A2_BASE, &shootingPWM);
          pwmFireCounter = 0;
       }
       else
@@ -181,7 +227,7 @@ void drawBullets(void)
          }
          else if (pwmFireCounter == 3)
          {
-           Timer_A_stop(TIMER_A2_BASE);
+           //Timer_A_stop(TIMER_A2_BASE);
            pwmFireCounter = 4;
          }
 
@@ -195,7 +241,7 @@ void drawBullets(void)
           * */
          else if (pwmFireCounter == 4 && pwmExplosionCounter == 3)
          {
-           Timer_A_stop(TIMER_A2_BASE);
+           //Timer_A_stop(TIMER_A2_BASE);
            pwmExplosionCounter = 4;
          }
       }
@@ -265,7 +311,7 @@ void drawBullets(void)
                 explosions[j][s] = 1;
                 explosions[j][d] = 1;
                 /* Generate PWM for the buzzer to make a sound of an explosion */
-                Timer_A_outputPWM(TIMER_A2_BASE, &explosionPWM);
+                //Timer_A_outputPWM(TIMER_A2_BASE, &explosionPWM);
                 pwmExplosionCounter = 0;
                 /* Clear the aliens position */
                 alienRect.xMax = aliens[j][x] + 2;
@@ -557,7 +603,7 @@ void drawBombs(void)
             explosions[3][s] = 1;
             explosions[3][d] = 1;
             /* Generate PWM for the buzzer to make a sound of an explosion */
-            Timer_A_outputPWM(TIMER_A2_BASE, &explosionPWM);
+            //Timer_A_outputPWM(TIMER_A2_BASE, &explosionPWM);
             pwmExplosionCounter = 0;
             /* Clear the spacecrafts previous position */
             spacecraftRect.xMax = spacecraftPosition[x] + 2;
