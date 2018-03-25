@@ -90,6 +90,9 @@ int I2C_read16(unsigned char writeByte)
     volatile int val = 0;
     volatile int valScratch = 0;
 
+    __no_operation();
+    __disable_interrupt();
+    __no_operation();
     /* Set master to transmit mode PL */
     USCI_B_I2C_setMode(USCI_B1_BASE,
                        USCI_B_I2C_TRANSMIT_MODE);
@@ -98,6 +101,9 @@ int I2C_read16(unsigned char writeByte)
     USCI_B_I2C_clearInterrupt(USCI_B1_BASE,
                               USCI_B_I2C_TRANSMIT_INTERRUPT +
                               USCI_B_I2C_RECEIVE_INTERRUPT);
+
+    /* Clear Rx buffer to make room for next receive*/
+    USCI_B_I2C_masterReceiveMultiByteNext(USCI_B1_BASE);
 
     /* Wait until ready to write PL */
     while (USCI_B_I2C_isBusBusy(USCI_B1_BASE));
@@ -121,8 +127,7 @@ int I2C_read16(unsigned char writeByte)
      * until you issue a STOP
      */
 
-    /* Set master to receive mode */
-    USCI_B_I2C_setMode(USCI_B1_BASE, USCI_B_I2C_RECEIVE_MODE);
+    //Initialize multi reception
     USCI_B_I2C_masterReceiveMultiByteStart(USCI_B1_BASE);
 
     /* Wait for RX buffer to fill */
@@ -134,6 +139,10 @@ int I2C_read16(unsigned char writeByte)
 
     /* Receive second byte then send STOP condition */
     valScratch = USCI_B_I2C_masterReceiveMultiByteFinish(USCI_B1_BASE);
+
+    __no_operation();
+    __enable_interrupt();
+    __no_operation();
 
     /* Shift val to top MSB */
     val = (val << 8);
@@ -155,6 +164,9 @@ int I2C_read16(unsigned char writeByte)
 
 void I2C_write16 (unsigned char pointer, unsigned int writeByte)
 {
+  __no_operation();
+  __disable_interrupt();
+  __no_operation();
   /* Set master to transmit mode PL */
   USCI_B_I2C_setMode(USCI_B1_BASE,
                    USCI_B_I2C_TRANSMIT_MODE);
@@ -162,7 +174,7 @@ void I2C_write16 (unsigned char pointer, unsigned int writeByte)
   /* Clear any existing interrupt flag PL */
   USCI_B_I2C_clearInterrupt(USCI_B1_BASE, USCI_B_I2C_TRANSMIT_INTERRUPT);
 
-  /* Wait until ready to write PL */
+  /* Wait until ready to write */
   while (USCI_B_I2C_isBusBusy(USCI_B1_BASE));
 
   /* Initiate start and send first character */
@@ -174,6 +186,10 @@ void I2C_write16 (unsigned char pointer, unsigned int writeByte)
 
   USCI_B_I2C_masterSendMultiByteFinish(USCI_B1_BASE,
       (unsigned char)(writeByte&0xFF));
+
+  __no_operation();
+  __enable_interrupt();
+  __no_operation();
 }
 
 

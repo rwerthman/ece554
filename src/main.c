@@ -45,6 +45,9 @@ uint32_t drawExplosionsStack[STACK_SIZE];
 void drawBullets(void);
 uint32_t drawBulletsStack[STACK_SIZE];
 
+void adjustBacklight(void);
+uint32_t adjustBacklightStack[STACK_SIZE];
+
 /* Semaphores for the graphic's context */
 semCaller drawSpacecraftGraphicsCaller = {4,0};
 semCaller drawAliensGraphicsCaller ={1,0};
@@ -82,27 +85,8 @@ Timer_A_initCompareModeParam backlightPWM =
   TIMER_A_CAPTURECOMPARE_REGISTER_1,
   TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
   TIMER_A_OUTPUTMODE_TOGGLE_SET,
-  60000/8
+  60000
 };
-
-//Timer_A_outputPWMParam shootingPWM =
-//{
-//  TIMER_A_CLOCKSOURCE_SMCLK,
-//  TIMER_A_CLOCKSOURCE_DIVIDER_1,
-//  60000,
-//  TIMER_A_CAPTURECOMPARE_REGISTER_2,
-//  TIMER_A_OUTPUTMODE_RESET_SET,
-//  60000/2 // 50% duty cycle
-//};
-
-//Timer_A_outputPWMParam explosionPWM = {
-//  TIMER_A_CLOCKSOURCE_SMCLK,
-//  TIMER_A_CLOCKSOURCE_DIVIDER_1,
-//  6400,
-//  TIMER_A_CAPTURECOMPARE_REGISTER_2,
-//  TIMER_A_OUTPUTMODE_RESET_SET,
-//  6400/2 // 50% duty cycle
-//};
 
 /* Backlight globals */
 float lux;
@@ -141,16 +125,13 @@ void main(void)
 
   /* Initialize OPT3001 digital ambient light sensor */
   OPT3001_init();
-  Timer_A_initCompareMode(TIMER_A2_BASE, &backlightPWM);
 
   addTaskToScheduler(drawSpacecraft, &drawSpacecraftStack[STACK_SIZE - 1]);
   addTaskToScheduler(drawAliens, &drawAliensStack[STACK_SIZE - 1]);
   addTaskToScheduler(drawBombs, &drawBombsStack[STACK_SIZE - 1]);
   addTaskToScheduler(drawBullets, &drawBulletsStack[STACK_SIZE - 1]);
   addTaskToScheduler(drawExplosions, &drawExplosionsStack[STACK_SIZE - 1]);
-
-  /* Obtain lux value from OPT3001 */
-  float lux = OPT3001_getLux();
+  addTaskToScheduler(adjustBacklight, &adjustBacklightStack[STACK_SIZE - 1]);
 
   startScheduler();
 
@@ -166,9 +147,16 @@ uint32_t mapValToRange(uint32_t x, uint32_t input_min, uint32_t input_max,
   return val;
 }
 
-void drawScoreAndAdjustBacklight(void)
+void adjustBacklight(void)
 {
-  lux = OPT3001_getLux();
+  while (1)
+  {
+    __delay_cycles(10000000); // Delay about 400 milliseconds between readings to avoid flickering from outlier readings  Probably need to average readings or something to fix
+    lux = OPT3001_getLux();
+    /* Adjust LCD Backlight so the higher the lux the brigther the backlight*/
+    backlightPWM.compareValue = lux*50;
+    Timer_A_initCompareMode(TIMER_A2_BASE, &backlightPWM);
+  }
 }
 
 void drawBullets(void)
@@ -213,7 +201,7 @@ void drawBullets(void)
          /* Reset previous button state to be ready for the next button press */
          previousFireButtonState = GPIO_INPUT_PIN_HIGH;
          /* Generate PWM for the buzzer when shooting */
-         //Timer_A_outputPWM(TIMER_A2_BASE, &shootingPWM);
+         shootingPWM.compareOutputMode = TIMER_A_OUTPUTMODE_RESET_SET;
          Timer_A_initCompareMode(TIMER_A2_BASE, &shootingPWM);
          pwmFireCounter = 0;
       }
@@ -227,7 +215,8 @@ void drawBullets(void)
          }
          else if (pwmFireCounter == 3)
          {
-           //Timer_A_stop(TIMER_A2_BASE);
+           shootingPWM.compareOutputMode = TIMER_A_OUTPUTMODE_RESET;
+           Timer_A_initCompareMode(TIMER_A2_BASE, &shootingPWM);
            pwmFireCounter = 4;
          }
 
@@ -241,7 +230,8 @@ void drawBullets(void)
           * */
          else if (pwmFireCounter == 4 && pwmExplosionCounter == 3)
          {
-           //Timer_A_stop(TIMER_A2_BASE);
+           explosionPWM.compareOutputMode = TIMER_A_OUTPUTMODE_RESET;
+           Timer_A_initCompareMode(TIMER_A2_BASE, &explosionPWM);
            pwmExplosionCounter = 4;
          }
       }
@@ -311,7 +301,9 @@ void drawBullets(void)
                 explosions[j][s] = 1;
                 explosions[j][d] = 1;
                 /* Generate PWM for the buzzer to make a sound of an explosion */
-                //Timer_A_outputPWM(TIMER_A2_BASE, &explosionPWM);
+                explosionPWM.compareOutputMode = TIMER_A_OUTPUTMODE_RESET_SET;
+                explosionPWM.compareValue = 60000/4;
+                Timer_A_initCompareMode(TIMER_A2_BASE, &explosionPWM);
                 pwmExplosionCounter = 0;
                 /* Clear the aliens position */
                 alienRect.xMax = aliens[j][x] + 2;
@@ -603,7 +595,8 @@ void drawBombs(void)
             explosions[3][s] = 1;
             explosions[3][d] = 1;
             /* Generate PWM for the buzzer to make a sound of an explosion */
-            //Timer_A_outputPWM(TIMER_A2_BASE, &explosionPWM);
+            explosionPWM.compareOutputMode = TIMER_A_OUTPUTMODE_RESET_SET;
+            Timer_A_initCompareMode(TIMER_A2_BASE, &explosionPWM);
             pwmExplosionCounter = 0;
             /* Clear the spacecrafts previous position */
             spacecraftRect.xMax = spacecraftPosition[x] + 2;
@@ -683,21 +676,6 @@ void drawSpacecraft(void)
       }
     }
   }
-}
-
-void detectBombBulletCollision(void)
-{
-
-}
-
-void drawDifficultyLevel(void)
-{
-
-}
-
-void setDifficultyLevel(void)
-{
-
 }
 
 #pragma vector=PORT1_VECTOR
