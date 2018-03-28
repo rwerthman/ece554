@@ -100,6 +100,24 @@ void initTimers(void)
             TIMER_A_DO_CLEAR                        // Clear value
     };
     Timer_A_initUpMode(TIMER_A2_BASE, &upConfig2);
+
+    Timer_A_initCompareModeParam shootingPWM =
+    {
+      TIMER_A_CAPTURECOMPARE_REGISTER_2,
+      TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
+      TIMER_A_OUTPUTMODE_RESET,
+      60000/2
+    };
+    Timer_A_initCompareMode(TIMER_A2_BASE, &shootingPWM);
+
+    Timer_A_initCompareModeParam backlightPWM =
+    {
+      TIMER_A_CAPTURECOMPARE_REGISTER_1,
+      TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
+      TIMER_A_OUTPUTMODE_TOGGLE_SET,
+      60000
+    };
+    Timer_A_initCompareMode(TIMER_A2_BASE, &backlightPWM);
     Timer_A_clearCaptureCompareInterrupt(TIMER_A2_BASE,
                                          TIMER_A_CAPTURECOMPARE_REGISTER_0 + TIMER_A_CAPTURECOMPARE_REGISTER_1 + TIMER_A_CAPTURECOMPARE_REGISTER_2);
 

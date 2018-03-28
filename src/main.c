@@ -64,32 +64,10 @@ Graphics_Rectangle explosionRect;
 Graphics_Rectangle alienRect;
 Graphics_Rectangle bombRect;
 
-Timer_A_initCompareModeParam shootingPWM =
-{
-  TIMER_A_CAPTURECOMPARE_REGISTER_2,
-  TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
-  TIMER_A_OUTPUTMODE_RESET_SET,
-  60000/2
-};
-
-Timer_A_initCompareModeParam explosionPWM =
-{
-  TIMER_A_CAPTURECOMPARE_REGISTER_2,
-  TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
-  TIMER_A_OUTPUTMODE_RESET_SET,
-  60000/4
-};
-
-Timer_A_initCompareModeParam backlightPWM =
-{
-  TIMER_A_CAPTURECOMPARE_REGISTER_1,
-  TIMER_A_CAPTURECOMPARE_INTERRUPT_DISABLE,
-  TIMER_A_OUTPUTMODE_TOGGLE_SET,
-  60000
-};
-
 /* Backlight globals */
 float lux;
+float prevLux = 0;
+float luxDiff;
 
 /**
  * main.c
@@ -151,11 +129,26 @@ void adjustBacklight(void)
 {
   while (1)
   {
-    __delay_cycles(10000000); // Delay about 400 milliseconds between readings to avoid flickering from outlier readings  Probably need to average readings or something to fix
+    __delay_cycles(1000000);
+    // Delay about 40 milliseconds between readings to avoid flickering from outlier readings
+    // Also only change the backlight if 2 consecutive samples are within 100 lux of eachother
     lux = OPT3001_getLux();
-    /* Adjust LCD Backlight so the higher the lux the brigther the backlight*/
-    backlightPWM.compareValue = lux*50;
-    Timer_A_initCompareMode(TIMER_A2_BASE, &backlightPWM);
+    luxDiff = lux - prevLux;
+    if ((luxDiff < 0) && (luxDiff <= -100))
+    {
+      /* Take another sample */
+      prevLux = lux;
+    }
+    else if ((luxDiff > 0) && (luxDiff >= 100))
+    {
+      /* Take another sample */
+      prevLux = lux;
+    }
+    else
+    {
+      /* Adjust LCD Backlight so the higher the lux the brigther the backlight*/
+      Timer_A_setCompareValue(TIMER_A2_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_1, lux*50);
+    }
   }
 }
 
@@ -201,8 +194,7 @@ void drawBullets(void)
          /* Reset previous button state to be ready for the next button press */
          previousFireButtonState = GPIO_INPUT_PIN_HIGH;
          /* Generate PWM for the buzzer when shooting */
-         shootingPWM.compareOutputMode = TIMER_A_OUTPUTMODE_RESET_SET;
-         Timer_A_initCompareMode(TIMER_A2_BASE, &shootingPWM);
+         Timer_A_setOutputMode(TIMER_A2_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2, TIMER_A_OUTPUTMODE_RESET_SET);
          pwmFireCounter = 0;
       }
       else
@@ -215,8 +207,7 @@ void drawBullets(void)
          }
          else if (pwmFireCounter == 3)
          {
-           shootingPWM.compareOutputMode = TIMER_A_OUTPUTMODE_RESET;
-           Timer_A_initCompareMode(TIMER_A2_BASE, &shootingPWM);
+           Timer_A_setOutputMode(TIMER_A2_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2, TIMER_A_OUTPUTMODE_RESET);
            pwmFireCounter = 4;
          }
 
@@ -230,8 +221,7 @@ void drawBullets(void)
           * */
          else if (pwmFireCounter == 4 && pwmExplosionCounter == 3)
          {
-           explosionPWM.compareOutputMode = TIMER_A_OUTPUTMODE_RESET;
-           Timer_A_initCompareMode(TIMER_A2_BASE, &explosionPWM);
+           Timer_A_setOutputMode(TIMER_A2_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2, TIMER_A_OUTPUTMODE_RESET);
            pwmExplosionCounter = 4;
          }
       }
@@ -301,9 +291,7 @@ void drawBullets(void)
                 explosions[j][s] = 1;
                 explosions[j][d] = 1;
                 /* Generate PWM for the buzzer to make a sound of an explosion */
-                explosionPWM.compareOutputMode = TIMER_A_OUTPUTMODE_RESET_SET;
-                explosionPWM.compareValue = 60000/4;
-                Timer_A_initCompareMode(TIMER_A2_BASE, &explosionPWM);
+                Timer_A_setOutputMode(TIMER_A2_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2, TIMER_A_OUTPUTMODE_RESET_SET);
                 pwmExplosionCounter = 0;
                 /* Clear the aliens position */
                 alienRect.xMax = aliens[j][x] + 2;
@@ -595,8 +583,7 @@ void drawBombs(void)
             explosions[3][s] = 1;
             explosions[3][d] = 1;
             /* Generate PWM for the buzzer to make a sound of an explosion */
-            explosionPWM.compareOutputMode = TIMER_A_OUTPUTMODE_RESET_SET;
-            Timer_A_initCompareMode(TIMER_A2_BASE, &explosionPWM);
+            Timer_A_setOutputMode(TIMER_A2_BASE, TIMER_A_CAPTURECOMPARE_REGISTER_2, TIMER_A_OUTPUTMODE_RESET_SET);
             pwmExplosionCounter = 0;
             /* Clear the spacecrafts previous position */
             spacecraftRect.xMax = spacecraftPosition[x] + 2;
